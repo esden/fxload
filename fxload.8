@@ -1,0 +1,137 @@
+.\" fxload.8
+.\" Created: Fri Dec 28 2001 by David Brownell
+.\" Copyright 2001 David Brownell <dbrownell@users.sourceforge.net>
+.\" 
+.\" Permission is granted to make and distribute verbatim copies of this
+.\" manual provided the copyright notice and this permission notice are
+.\" preserved on all copies.
+.\" 
+.\" Permission is granted to copy and distribute modified versions of this
+.\" manual under the conditions for verbatim copying, provided that the
+.\" entire resulting derived work is distributed under the terms of a
+.\" permission notice identical to this one
+.\" 
+.\" Since the Linux kernel and libraries are constantly changing, this
+.\" manual page may be incorrect or out-of-date.  The author(s) assume no
+.\" responsibility for errors or omissions, or for damages resulting from
+.\" the use of the information contained herein.  The author(s) may not
+.\" have taken the same level of care in the production of this manual,
+.\" which is licensed free of charge, as they might when working
+.\" professionally.
+.\" 
+.\" Formatted or processed versions of this manual, if unaccompanied by
+.\" the source, must acknowledge the copyright and authors of this work.
+.\" 
+.TH FXLOAD 8 "December 2001" "" "Linux Programmer's Manual"
+.SH "NAME"
+fxload \- Firmware download to EZ-USB FX and FX2 devices
+.SH "SYNOPSIS"
+.B fxload
+.BI "[ \-2 ]"
+.BI "[ \-v ]"
+.BI "[ \-D " devpath " ]"
+.BI "[ \-I " hexfile " ]"
+.BI "[ \-L " link " ]"
+.BI "[ \-m " mode " ]"
+.SH "DESCRIPTION"
+.B fxload
+is a program which downloads firmware to USB devices based on
+the Cypress EZ-USB FX or FX2 microcontrollers.
+These have 8-bit 8051 cores with special extensions for USB I/O.
+The FX2 supports high speed USB 2.0 transfers (480 MBit/sec)
+as well as full speed USB 1.1 transfers (12 MBit/sec),
+while the original FX part supports only full speed transfers.
+These controllers have several package options,
+and can be set up with external memory (on-chip memory is
+usually about 8K) and ROMs when device costs allow.
+Note that the original design was from AnchorChips, so you may find
+references to that vendor (which was later merged into Cypress).
+.PP
+This uses "usbfs" (older name:  "usbdevfs") to access
+devices, and issues vendor specific control requests
+to download and reset the EZ-USB devices.
+Normally, firmware will then "renumerate" by disconnecting from
+USB and then reconnecting as a new device.
+It then appears with new device descriptors and functionality,
+as provided by the firmware which has been downloaded.
+.PP
+To support some non-firmware applications, this can also set
+up symbolic links for those usbfs names.
+It can also change their access modes.
+Both of these can help simplify software applications that
+need to talk to USB devices using user mode drivers,
+don't want to run with privileges or to examine all of the
+existing USB devices,
+and which don't need kernel more drivers.
+.PP
+See the
+.I Linux-Hotplug
+web site for information about how to use
+.B fxload
+to download device firmware when hotplugging USB devices,
+using driver-specific scripts stored in the
+.I /etc/hotplug/usb
+directory.
+.SH "FUNCTION LETTERS"
+At least one of the following options must be specified.
+.TP
+.BI "\-I " hexfile
+Downloads the specified firmware file.
+This firmware is provided in standard Intel hexfile format.
+(Common naming conventions include
+.I *.hex
+and
+.IR *.ihx .)
+.TP
+.BI "\-L " link
+Creates the specified symbolic link to the usbfs device path.
+This would typically be used to create a name in a directory
+that would be searched by an application.
+The symlink would be removed by some other component on device unplug.
+.TP
+.BI "\-m " mode
+Changes permissions on the "usbfs" device node.
+By default, those nodes are only accessible by privileged
+users, which doesn't help when the user mode device driver
+needs to run without root privileges.
+Note that usbfs mount options like
+.I devmode=0666
+are also available.
+.PP
+Note that when downloading firmware that renumerates,
+there's no point in changing the device permissions
+or creating a symbolic link.
+.SH "OPTIONS"
+By default,
+.B fxload
+assumes the device uses an EZ-USB FX.
+It also assumes that the device in question has been specified
+by USB kernel hotplugging conventions, using the
+.I DEVICE
+environment variable to name a "usbfs"
+file that can be used to talk to the device.
+.TP
+.B "\-2"
+Indicates the device is an EZ-USB FX2 device, which has slightly
+different download procedures and constraints than the EZ-USB FX.
+.TP
+.B "\-v"
+Prints some diagnostics, such as download addresses and sizes,
+to standard error.
+.TP
+.BI "\-D " devpath
+Specifies the "usbfs" path name for the device in question,
+such as
+.IR /proc/bus/usb/004/080 .
+This takes precedence over any
+.I DEVICE
+environment variable that may be set.
+.SH "ENVIRONMENT VARIABLES"
+.I DEVICE
+normally names a "usbfs" file that will be used to talk to the device.
+This is provided by the Linux kernel as part of USB hotplugging.
+.SH "SEE ALSO"
+.BR hotplug "(8) "
+.SH "AUTHORS"
+fxload is developed by Linux Hotplugging Project
+.I http://linux-hotplug.sourceforge.net/
