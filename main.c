@@ -50,6 +50,7 @@
 # include  <sys/types.h>
 # include  <sys/stat.h>
 # include  <fcntl.h>
+# include  <unistd.h>
 
 # include  "ezusb.h"
 
@@ -154,6 +155,9 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.3  2001/12/27 17:54:04  dbrownell
+ * forgot an important character :)
+ *
  * Revision 1.2  2001/12/27 17:43:29  dbrownell
  * fail on firmware download errors; add "-v" flag
  *
