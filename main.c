@@ -74,7 +74,7 @@ int main(int argc, char*argv[])
       int		opt;
       int		config = -1;
 
-      while ((opt = getopt(argc, argv, "2vVD:I:L:c:m:s:")) != EOF)
+      while ((opt = getopt (argc, argv, "2vV?D:I:L:c:m:s:")) != EOF)
       switch (opt) {
 
 	  case '2':
@@ -94,8 +94,8 @@ int main(int argc, char*argv[])
 	    break;
 
 	  case 'V':
-	    printf ("Version: %s\n", FXLOAD_VERSION);
-	    break;
+	    puts (FXLOAD_VERSION);
+	    return 0;
 
 	  case 'c':
 	    config = strtoul (optarg, 0, 0);
@@ -119,6 +119,7 @@ int main(int argc, char*argv[])
 	    verbose++;
 	    break;
 
+	  case '?':
 	  default:
 	    goto usage;
 
@@ -217,6 +218,11 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.5  2002/02/26 20:10:28  dbrownell
+ * - "-s loader" option for 2nd stage loader
+ * - "-c byte" option to write EEPROM with 2nd stage
+ * - "-V" option to dump version code
+ *
  * Revision 1.4  2002/01/17 14:19:28  dbrownell
  * fix warnings
  *
