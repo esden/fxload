@@ -22,7 +22,7 @@
 .\" Formatted or processed versions of this manual, if unaccompanied by
 .\" the source, must acknowledge the copyright and authors of this work.
 .\" 
-.TH FXLOAD 8 "February 2002" "" "Linux Programmer's Manual"
+.TH FXLOAD 8 "April 2002" "" "Linux Programmer's Manual"
 .SH "NAME"
 fxload \- Firmware download to EZ-USB devices
 .SH "SYNOPSIS"
@@ -107,6 +107,10 @@ needs to run without root privileges.
 Note that usbfs mount options like
 .I devmode=0666
 are also available.
+.TP
+.B "\-V"
+Identifies the version of fxload being invoked, and exits
+without performing other actions.
 .PP
 Note that when downloading firmware that renumerates,
 there's no point in changing the device permissions
@@ -153,7 +157,7 @@ behond the one built into all EZ-USB hardware.
 .TP
 .B "\-v"
 Prints some diagnostics, such as download addresses and sizes,
-to standard error.
+to standard error.  Repeat for more diagnostics.
 .TP
 .BI "\-D " devpath
 Specifies the "usbfs" path name for the device in question,
@@ -162,9 +166,6 @@ such as
 This takes precedence over any
 .I DEVICE
 environment variable that may be set.
-.TP
-.B "\-V"
-Identifies the version of fxload being invoked.
 .SH "NOTES"
 .PP
 This program implements one extension to the standard "hex file" format.
