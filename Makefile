@@ -17,7 +17,7 @@ CFLAGS =		-O -Wall $(RPM_OPT_FLAGS)
 
 FILES_SRC_C =		ezusb.c main.c
 FILES_SRC_H =		ezusb.h
-FILES_SRC_OTHER =	README.txt COPYING Makefile fxload.8
+FILES_SRC_OTHER =	README.txt COPYING Makefile fxload.8 a3load.hex
 FILES_SRC =		$(FILES_SRC_OTHER) $(FILES_SRC_H) $(FILES_SRC_C)
 
 FILES_OBJ =		$(FILES_SRC_C:%.c=%.o)
@@ -50,9 +50,9 @@ ezusb.o: ezusb.c ezusb.h
 # different degrees of clean ...
 #	FIXME:  shouldn't assume only x86 RPMs get built
 mrproper:	clean
-	rm -f $(RELEASE_NAME).tar.gz
-	rm -f  $(RELEASE_NAME).spec $(RELEASE_NAME)-*.src.rpm
-	rm -rf i386 $(RELEASE_NAME) build
+	rm -f $(PROG)-*.tar.gz
+	rm -f  $(PROG)-*.spec $(PROG)-*.src.rpm
+	rm -rf i386 $(PROG)-* build
 clean:
 	rm -f Log *.o *~ $(PROG)
 
@@ -61,6 +61,7 @@ clean:
 install: $(PROG)
 	$(INSTALL_PROGRAM) $(PROG) $(sbindir)/$(PROG)
 	$(INSTALL_PROGRAM) -m 0644 $(PROG).8 $(mandir)/man8/$(PROG).8
+	$(INSTALL_PROGRAM) -m 0644 a3load.hex $(prefix)/usr/share/usb/a3load.hex
 
 
 # make a source tarball
