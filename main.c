@@ -53,6 +53,7 @@
 
 # include  "ezusb.h"
 
+int verbose;
 
 int main(int argc, char*argv[])
 {
@@ -85,6 +86,11 @@ int main(int argc, char*argv[])
 	    mode = strtoul(optarg,0,0);
 	    mode &= 0777;
 	    break;
+
+	  case 'v':
+	    verbose++;
+	    break;
+
 	  default:
 	    goto usage;
 
@@ -95,20 +101,29 @@ int main(int argc, char*argv[])
 usage:
 	    fputs ("usage: ", stderr);
 	    fputs (argv [0], stderr);
-	    fputs (" [-2] [-D devpath] [-I hexfile]", stderr);
+	    fputs (" [-2v] [-D devpath] [-I firmware_hexfile] ", stderr);
 	    fputs ("[-L link] [-m mode]\n", stderr);
 	    fputs ("... [-D devpath] overrides DEVICE= in env\n", stderr);
+	    fputs ("... at least one of -I, -L, -m is required\n", stderr);
 	    return -1;
       }
 
       if (ihex_path) {
 	    int fd = open(device_path, O_RDWR);
+	    int status;
+
 	    if (fd == -1) {
 		  perror(device_path);
 		  return -1;
 	    }
 
-	    ezusb_load_ihex(fd, ihex_path, fx2);
+	    status = ezusb_load_ihex(fd, ihex_path, fx2);
+	    if (status != 0)
+		return status;
+	    
+	    /* some firmware won't renumerate, but typically it will.
+	     * link and chmod only make sense without renumeration...
+	     */
       }
 
       if (link_path) {
@@ -139,5 +154,10 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.1  2001/06/12 00:00:50  stevewilliams
+ *  Added the fxload program.
+ *  Rework root makefile and hotplug.spec to install in prefix
+ *  location without need of spec file for install.
+ *
  */
 
