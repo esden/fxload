@@ -22,6 +22,9 @@
 # include  <stdio.h>
 # include  <errno.h>
 # include  <assert.h>
+# include  <stdlib.h>
+# include  <string.h>
+# include  <sys/ioctl.h>
 
 # include  <linux/ioctl.h>
 # include  <linux/usbdevice_fs.h>
@@ -130,8 +133,9 @@ int ezusb_load_ihex(int fd, const char*path, int fx2)
       FILE*image;
       int rc;
       unsigned short cpucs_addr;
+      int first_line = 1;
 
-      /* EZ-USB FX and FX2 devices differ, apart from the 8051 core */
+      /* EZ-USB original/FX and FX2 devices differ, apart from the 8051 core */
       if (fx2)
 	    cpucs_addr = 0xe600;
       else
@@ -158,7 +162,7 @@ int ezusb_load_ihex(int fd, const char*path, int fx2)
        * requests.  Most hex files keep memory segments together, which
        * makes such merging all but free.
        */
-      data_len = 0;
+      data_addr = data_len = 0;
       for (;;) {
 	    char buf[1024], *cp;
 	    char tmp;
@@ -186,6 +190,12 @@ int ezusb_load_ihex(int fd, const char*path, int fx2)
 	    buf[7] = 0;
 	    off = strtoul(buf+3, 0, 16);
 	    buf[7] = tmp;
+
+              /* Initialize data_addr */
+            if (first_line) {
+		  data_addr = off;
+		  first_line = 0;
+            }
 
 	      /* Read the record type */
 	    tmp = buf[9];
@@ -240,6 +250,8 @@ int ezusb_load_ihex(int fd, const char*path, int fx2)
 		}
 	    } else {
 		/* with 8KB RAM, 0x0000-0x1b3f can be written
+		 * unclear about unused bulk buffers 0x1b3f-0x1f3f
+		 * firmware can set ISODISAB for 2KB at 0x2000-0x27ff
 		 * we can't tell if it's a 4KB device here
 		 */
 		if (off <= 0x1b3f) {
@@ -301,6 +313,9 @@ int ezusb_load_ihex(int fd, const char*path, int fx2)
 
 /*
  * $Log$
+ * Revision 1.3  2001/12/27 17:59:33  dbrownell
+ * merge adjacent hex records, and optionally show writes
+ *
  * Revision 1.2  2001/12/14 11:24:04  dbrownell
  * Add sanity check: reject requests to load off-chip memory,
  * The EZ-USB devices just fail silently in these cases.
