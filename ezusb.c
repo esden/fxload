@@ -318,12 +318,13 @@ int parse_ihex (
 	    return -2;
 	}
 
-	if (verbose >= 3) {
-	    cp = strchr (buf, '\n');
-	    if (cp)
-		*cp = 0;
+	/* ignore any newline */
+	cp = strchr (buf, '\n');
+	if (cp)
+	    *cp = 0;
+
+	if (verbose >= 3)
 	    fprintf (stderr, "** LINE: %s\n", buf);
-	}
 
 	/* Read the length field (up to 16 bytes) */
 	tmp = buf[3];
@@ -361,7 +362,7 @@ int parse_ihex (
 	    return -3;
 	}
 
-	if ((len * 2) + 11 >= strlen(buf)) {
+	if ((len * 2) + 11 > strlen(buf)) {
 	    fprintf (stderr, "record too short?\n");
 	    return -4;
 	}
@@ -782,6 +783,10 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 
 /*
  * $Log$
+ * Revision 1.7  2002/04/12 00:25:58  dbrownell
+ * - support older AnchorChips style EEPROMs too
+ * - minor bugfix for config byte mask in FX
+ *
  * Revision 1.6  2002/04/02 08:34:16  dbrownell
  * minor stuff:
  * - don't assume last segment in file is always internal
