@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2001 Stephen Williams (steve@icarus.com)
- * Copyright (c) 2001 David Brownell (dbrownell@users.sourceforge.net)
+ * Copyright (c) 2001-2002 David Brownell (dbrownell@users.sourceforge.net)
  *
  *    This source code is free software; you can redistribute it
  *    and/or modify it in source code form under the terms of the GNU
@@ -22,297 +22,758 @@
 # include  <stdio.h>
 # include  <errno.h>
 # include  <assert.h>
+# include  <limits.h>
 # include  <stdlib.h>
 # include  <string.h>
+
 # include  <sys/ioctl.h>
 
-# include  <linux/ioctl.h>
+# include  <linux/version.h>
+# include  <linux/usb.h>
 # include  <linux/usbdevice_fs.h>
+
+# include "ezusb.h"
 
 /*
  * This file contains functions for downloading firmware into Cypress
- * EZ-USB devices. The chip uses control endpoint 0 and vendor
- * specific commands to support writing into the on-chip SRAM. It also
+ * EZ-USB microcontrollers. These chips use control endpoint 0 and vendor
+ * specific commands to support writing into the on-chip SRAM. They also
  * supports writing into the CPUCS register, and this is how we reset
  * the processor.
+ *
+ * A second stage loader must be used when writing to off-chip memory,
+ * or when downloading firmare into the bootstrap I2C EEPROM which may
+ * be available in some hardware configurations.
  *
  * These Cypress devices are 8-bit 8051 based microcontrollers with
  * special support for USB I/O.  They come in several packages, and
  * some can be set up with external memory when device costs allow.
  * Note that the design was originally by AnchorChips, so you may find
  * references to that vendor (which was later merged into Cypress).
+ * The Cypress FX parts are largely compatible with the Anchorhip ones.
  */
 
-extern int verbose;
+int verbose;
 
 /*
- * The ezusb_poke function writes a stretch of memory to the target
- * device. The device has already been opened, and the address chosen
- * by the input source.
- *
- * Incidentally, all the O/S specific parts are in this function.
+ * return true iff [addr,addr+len) includes external RAM
+ * for Anchorchips EZ-USB or Cypress EZ-USB FX
  */
+static int fx_is_external (unsigned short addr, size_t len)
+{
+    /* with 8KB RAM, 0x0000-0x1b3f can be written
+     * we can't tell if it's a 4KB device here
+     */
+    if (addr <= 0x1b3f)
+	return ((addr + len) > 0x1b40);
+
+    /* there may be more RAM; unclear if we can write it.
+     * some bulk buffers may be unused, 0x1b3f-0x1f3f
+     * firmware can set ISODISAB for 2KB at 0x2000-0x27ff
+     */
+    return 1;
+}
+
+/*
+ * return true iff [addr,addr+len) includes external RAM
+ * for Cypress EZ-USB FX2
+ */
+static int fx2_is_external (unsigned short addr, size_t len)
+{
+    /* 1st 8KB for data/code, 0x0000-0x1fff */
+    if (addr <= 0x1fff)
+	return ((addr + len) > 0x2000);
+
+    /* and 512 for data, 0xe000-0xe1ff */
+    else if (addr >= 0xe000 && addr <= 0xe1ff)
+	return ((addr + len) > 0xe200);
+
+    /* otherwise, it's certainly external */
+    else
+	return 1;
+}
+
+/*****************************************************************************/
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,3)
+/*
+ * in 2.5, "struct usbdevfs_ctrltransfer" fields were renamed
+ * to match the USB spec
+ */
+#	define bRequestType	requesttype
+#	define bRequest		request
+#	define wValue		value
+#	define wIndex		index
+#	define wLength		length
+#endif
+
+/*
+ * Issue a control request to the specified device.
+ * This is O/S specific ...
+ */
+static inline int ctrl_msg (
+    int					device,
+    unsigned char			requestType,
+    unsigned char			request,
+    unsigned short			value,
+    unsigned short			index,
+    unsigned char			*data,
+    size_t				length
+) {
+    struct usbdevfs_ctrltransfer	ctrl;
+
+    if (length > USHRT_MAX) {
+	fputs ("length too big", stderr);
+	return -EINVAL;
+    }
+
+    /* 8 bytes SETUP */
+    ctrl.bRequestType = requestType;
+    ctrl.bRequest = request;
+    ctrl.wValue   = value;
+    ctrl.wLength  = (unsigned short) length;
+    ctrl.wIndex = index;
+
+    /* "length" bytes DATA */
+    ctrl.data = data;
+
+    ctrl.timeout = 10000;
+
+    return ioctl (device, USBDEVFS_CONTROL, &ctrl);
+}
+
+
+/*
+ * These are the requests (bRequest) that the bootstrap loader is expected
+ * to recognize.  The codes are reserved by Cypress, and these values match
+ * what EZ-USB hardware, or "Vend_Ax" firmware (2nd stage loader) uses.
+ * Cypress' "a3load" is nice because it supports both FX and FX2, although
+ * it doesn't have the EEPROM support (subset of "Vend_Ax").
+ */
+#define RW_INTERNAL	0xA0		/* hardware implements this one */
+#define RW_EEPROM	0xA2
+#define RW_MEMORY	0xA3
+#define GET_EEPROM_SIZE	0xA5
+
+
+/*
+ * Issues the specified vendor-specific read request.
+ */
+static int ezusb_read (
+    int					device,
+    char				*label,
+    unsigned char			opcode,
+    unsigned short			addr,
+    unsigned char			*data,
+    size_t				len
+) {
+    int					status;
+
+    if (verbose)
+	fprintf (stderr, "%s, addr 0x%04x len = %d\n",
+		label, addr, len);
+    status = ctrl_msg (device,
+	USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
+	addr, 0,
+	data, len);
+    if (status != len) {
+	if (status < 0)
+	    perror (label);
+	else
+	    fprintf (stderr, "%s ==> %d\n", label, status);
+    }
+    return status;
+}
+
+/*
+ * Issues the specified vendor-specific write request.
+ */
+static int ezusb_write (
+    int					device,
+    char				*label,
+    unsigned char			opcode,
+    unsigned short			addr,
+    const unsigned char			*data,
+    size_t				len
+) {
+    int					status;
+
+    if (verbose)
+	fprintf (stderr, "%s, addr 0x%04x len = %d\n",
+		label, addr, len);
+    status = ctrl_msg (device,
+	USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
+	addr, 0,
+	(unsigned char *) data, len);
+    if (status != len) {
+	if (status < 0)
+	    perror (label);
+	else
+	    fprintf (stderr, "%s ==> %d\n", label, status);
+    }
+    return status;
+}
+
+/*
+ * Modifies the CPUCS register to stop or reset the CPU.
+ * Returns false on error.
+ */
+static int ezusb_cpucs (
+    int			device,
+    unsigned short	addr,
+    int			doRun
+) {
+    int			status;
+    unsigned char	data = doRun ? 0 : 1;
+
+    if (verbose)
+	fprintf (stderr, "%s\n", data ? "stop CPU" : "reset CPU");
+    status = ctrl_msg (device,
+	USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+	RW_INTERNAL,
+	addr, 0,
+	&data, 1);
+    if (status != 1) {
+	char *mesg = "can't modify CPUCS";
+	if (status < 0)
+	    perror (mesg);
+	else
+	    fprintf (stderr, "%s\n", mesg);
+	return 0;
+    } else
+	return 1;
+}
+
+/*
+ * Returns the size of the EEPROM (assuming one is present).
+ * *data == 0 means it uses 8 bit addresses (or there is no EEPROM),
+ * *data == 1 means it uses 16 bit addresses
+ */
+static inline int ezusb_get_eeprom_type (int fd, unsigned char *data)
+{
+    return ezusb_read (fd, "get EEPROM size", GET_EEPROM_SIZE, 0, data, 1);
+}
+
+/*****************************************************************************/
+
+/*
+ * Parse an Intel HEX image file and invoke the poke() function on the
+ * various segments to implement policies such as writing to RAM (with
+ * a one or two stage loader setup, depending on the firmware) or to
+ * EEPROM (two stages required).
+ *
+ * image	- the hex image file
+ * context	- for use by poke()
+ * is_external	- if non-null, used to check which segments go into
+ *		  external memory (writable only by software loader)
+ * poke		- called with each memory segment; errors indicated
+ *		  by returning negative values.
+ *
+ * Caller is responsible for halting CPU as needed, such as when
+ * overwriting a second stage loader.
+ */
+int parse_ihex (
+    FILE	*image,
+    void	*context,
+    int		(*is_external)(unsigned short addr, size_t len),
+    int 	(*poke) (void *context, unsigned short addr, int external,
+		      const unsigned char *data, size_t len)
+)
+{
+    unsigned char	data [1023];
+    unsigned short	data_addr = 0;
+    size_t		data_len = 0;
+    int			rc;
+    int			first_line = 1;
+    int			external = 0;
+
+    /* Read the input file as an IHEX file, and report the memory segments
+     * as we go.  Each line holds a max of 16 bytes, but downloading is
+     * faster (and EEPROM space smaller) if we merge those lines into larger
+     * chunks.  Most hex files keep memory segments together, which makes
+     * such merging all but free.  (But it may still be worth sorting the
+     * hex files to make up for undesirable behavior from tools.)
+     *
+     * Note that EEPROM segments max out at 1023 bytes; the download protocol
+     * allows segments of up to 64 KBytes (more than a loader could handle).
+     */
+    for (;;) {
+	char 		buf [512], *cp;
+	char		tmp, type;
+	size_t		len;
+	unsigned	idx, off;
+
+	cp = fgets(buf, sizeof buf, image);
+	if (cp == 0) {
+	    fprintf (stderr, "EOF without EOF record!\n");
+	    break;
+	}
+
+	/* EXTENSION: "# comment-till-end-of-line", for copyrights etc */
+	if (buf[0] == '#')
+	    continue;
+
+	if (buf[0] != ':') {
+	    fprintf (stderr, "not an ihex record: %s", buf);
+	    return -2;
+	}
+
+	if (verbose >= 2) {
+	    cp = strchr (buf, '\n');
+	    if (cp)
+		*cp = 0;
+	    fprintf (stderr, "** LINE: %s\n", buf);
+	}
+
+	/* Read the length field (up to 16 bytes) */
+	tmp = buf[3];
+	buf[3] = 0;
+	len = strtoul(buf+1, 0, 16);
+	buf[3] = tmp;
+
+	/* Read the target offset (address up to 64KB) */
+	tmp = buf[7];
+	buf[7] = 0;
+	off = strtoul(buf+3, 0, 16);
+	buf[7] = tmp;
+
+	/* Initialize data_addr */
+	if (first_line) {
+	    data_addr = off;
+	    first_line = 0;
+	}
+
+	/* Read the record type */
+	tmp = buf[9];
+	buf[9] = 0;
+	type = strtoul(buf+7, 0, 16);
+	buf[9] = tmp;
+
+	/* If this is an EOF record, then make it so. */
+	if (type == 1) {
+	    if (verbose >= 2)
+		fprintf (stderr, "EOF on hexfile\n");
+	    break;
+	}
+
+	if (type != 0) {
+	    fprintf (stderr, "unsupported record type: %u\n", type);
+	    return -3;
+	}
+
+	if ((len * 2) + 11 >= strlen(buf)) {
+	    fprintf (stderr, "record too short?\n");
+	    return -4;
+	}
+
+	// FIXME check for _physically_ contiguous not just virtually
+	// e.g. on FX2 0x1f00-0x2100 includes both on-chip and external
+	// memory so it's not really contiguous
+
+	/* flush the saved data if it's not contiguous,
+	 * or when we've buffered as much as we can.
+	 */
+	if (data_len != 0
+		    && (off != (data_addr + data_len)
+			|| (data_len + len) > sizeof data)) {
+	    if (is_external)
+		external = is_external (data_addr, data_len);
+	    rc = poke (context, data_addr, external, data, data_len);
+	    if (rc < 0)
+		return -1;
+	    data_addr = off;
+	    data_len = 0;
+	}
+
+	/* append to saved data, flush later */
+	for (idx = 0, cp = buf+9 ;  idx < len ;  idx += 1, cp += 2) {
+	    tmp = cp[2];
+	    cp[2] = 0;
+	    data [data_len + idx] = strtoul(cp, 0, 16);
+	    cp[2] = tmp;
+	}
+	data_len += len;
+    }
+
+
+    /* flush any data remaining */
+    if (data_len != 0) {
+	if (is_external)
+	    external = is_external (data_addr, data_len);
+	rc = poke (context, data_addr, 0, data, data_len);
+	if (rc < 0)
+	    return -1;
+    }
+    return 0;
+}
+
+
+/*****************************************************************************/
+
+/*
+ * For writing to RAM using a first (hardware) or second (software)
+ * stage loader and 0xA0 or 0xA3 vendor requests
+ */
+typedef enum {
+    _undef = 0,
+    internal_only,		/* hardware first-stage loader */
+    skip_internal,		/* first phase, second-stage loader */
+    skip_external		/* second phase, second-stage loader */
+} ram_mode;
+
+struct ram_poke_context {
+    int		device;
+    ram_mode	mode;
+    unsigned	total, count;
+};
 
 # define RETRY_LIMIT 5
 
-static int ezusb_poke(int fd, unsigned addr,
-		      const unsigned char *data, unsigned len)
-{
-      int rc;
-      struct usbdevfs_ctrltransfer ctrl;
+static int ram_poke (
+    void		*context,
+    unsigned short	addr,
+    int			external,
+    const unsigned char	*data,
+    size_t		len
+) {
+    struct ram_poke_context	*ctx = context;
+    int			rc;
+    unsigned		retry = 0;
 
-      while (len > 0) {
-	    unsigned retry;
-	    unsigned trans = len;
-
-#if 0
-	      /* Only send 64 bytes at a time.  (Max packetsize?)
-	       *
-	       * NOTE:  the hardware allows much larger writes!
-	       * The protocol allows 64KBytes ... lots more than
-	       * any single memory segment could ever hold.
-	       */
-	    if (trans > 64)
-		  trans = 64;
-#endif
-
-	    if (verbose)
-		fprintf (stderr, "fxload to %#04x, len = %d\n", addr, len);
-
-	      /* request type 0x40 is Vendor Request OUT */
-	    ctrl.requesttype = 0x40;
-	      /* bRequest 0xa0 is Firmware load (handled in hardware) */
-	    ctrl.request = 0xa0;
-	      /* Put the target address in the value field */
-	    ctrl.value   = addr;
-	      /* All the data in the buffer go to the target. */
-	    ctrl.length  = trans;
-	    ctrl.index = 0;
-	    ctrl.timeout = 3000;
-	    ctrl.data = (unsigned char *) data;
-
-	      /* Try this a couple times. Control messages are not
-		 NAKed (then are just dropped) so I only time out when
-		 there is a problem. */
-	    retry = 0;
-	    while ((rc = ioctl(fd, USBDEVFS_CONTROL, &ctrl)) == -1) {
-		  if (errno != ETIMEDOUT) {
-			perror ("usb vendor control request");
-			break;
-		  }
-
-		  if (retry >= RETRY_LIMIT)
-			break;
-
-		  retry += 1;
+    switch (ctx->mode) {
+    case internal_only:		/* CPU should be stopped */
+	if (external) {
+	    fprintf (stderr, "can't write %d bytes external memory at 0x%04x\n",
+		len, addr);
+	    return -EINVAL;
+	}
+	break;
+    case skip_internal:		/* CPU must be running */
+	if (!external) {
+	    if (verbose >= 2) {
+		fprintf (stderr, "SKIP on-chip RAM, %d bytes at 0x%04x\n",
+		    len, addr);
 	    }
+	    return 0;
+	}
+	break;
+    case skip_external:		/* CPU should be stopped */
+	if (external) {
+	    if (verbose >= 2) {
+		fprintf (stderr, "SKIP external RAM, %d bytes at 0x%04x\n",
+		    len, addr);
+	    }
+	    return 0;
+	}
+	break;
+    default:
+	fprintf (stderr, "bug\n");
+	return -EDOM;
+    }
 
-	    if (rc < 0)
-		  return rc;
+    ctx->total += len;
+    ctx->count++;
 
-	    data += trans;
-	    addr += trans;
-	    len -= trans;
-      }
-
-      return 0;
+    /* Retry this till we get a real error. Control messages are not
+     * NAKed (just dropped) so time out means is a real problem.
+     */
+    while ((rc = ezusb_write (ctx->device,
+		    external ? "write external" : "write on-chip",
+		    external ? RW_MEMORY : RW_INTERNAL,
+		    addr, data, len)) < 0
+		&& retry < RETRY_LIMIT) {
+	  if (errno != ETIMEDOUT)
+		break;
+	  retry += 1;
+    }
+    return (rc < 0) ? -errno : 0;
 }
-
-static const char need2stage [] =
-    "need two stage loader to load memory at %#04x\n";
 
 /*
- * Load an intel HEX file into the target. The fd is the open "usbdevfs"
+ * Load an Intel HEX file into target RAM. The fd is the open "usbdevfs"
  * device, and the path is the name of the source file. Open the file,
- * interpret the bytes and write as I go.
+ * parse the bytes, and write them in one or two phases.
+ *
+ * If stage == 0, this uses the first stage loader, built into EZ-USB
+ * hardware but limited to writing on-chip memory or CPUCS.  Everything
+ * is written during one stage, unless there's an error such as the image
+ * holding data that needs to be written to external memory.
+ *
+ * Otherwise, things are written in two stages.  First the external
+ * memory is written, expecting a second stage loader to have already
+ * been loaded.  Then file is re-parsed and on-chip memory is written.
  */
-int ezusb_load_ihex(int fd, const char*path, int fx2)
+int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 {
-      unsigned char data[512];
-      unsigned data_addr, data_len;
-      FILE*image;
-      int rc;
-      unsigned short cpucs_addr;
-      int first_line = 1;
+    FILE			*image;
+    unsigned short		cpucs_addr;
+    int				(*is_external)(unsigned short off, size_t len);
+    struct ram_poke_context	ctx;
+    int				status;
 
-      /* EZ-USB original/FX and FX2 devices differ, apart from the 8051 core */
-      if (fx2)
-	    cpucs_addr = 0xe600;
-      else
-	    cpucs_addr = 0x7f92;
+    image = fopen (path, "r");
+    if (image == 0) {
+	fprintf (stderr, "%s: unable to open for input.\n", path);
+	return -2;
+    } else if (verbose)
+	fprintf (stderr, "open RAM hexfile image %s\n", path);
 
-      image = fopen(path, "r");
-      if (image == 0) {
-	    fprintf(stderr, "%s: unable to open for input.\n", path);
-	    return -2;
-      }
+    /* EZ-USB original/FX and FX2 devices differ, apart from the 8051 core */
+    if (fx2) {
+	cpucs_addr = 0xe600;
+	is_external = fx2_is_external;
+    } else {
+	cpucs_addr = 0x7f92;
+	is_external = fx_is_external;
+    }
 
+    /* use only first stage loader? */
+    if (!stage) {
+	ctx.mode = internal_only;
 
-	/* This writes the CPUCS register on the target device to hold
-	   the CPU reset. Do this first, so that I'm free to write its
-	   program data later. */
-      { unsigned char cpucs = 0x01;
-        ezusb_poke(fd, cpucs_addr, &cpucs, 1);
-      }
+	/* don't let CPU run while we overwrite its code/data */
+	if (!ezusb_cpucs (fd, cpucs_addr, 0))
+	    return -1;
 
+    /* first part of 2 stage loader */
+    } else {
+	ctx.mode = skip_internal;
 
-      /* Now read the input file as an IHEX file, and write the data
-       * into the target as we go.  Each line holds a max of 16 bytes,
-       * but downloading is faster if we merge those lines into larger
-       * requests.  Most hex files keep memory segments together, which
-       * makes such merging all but free.
-       */
-      data_addr = data_len = 0;
-      for (;;) {
-	    char buf[1024], *cp;
-	    char tmp;
-	    unsigned len, type;
-	    unsigned idx;
-	    unsigned off;
+	/* let CPU run; overwrite the 2nd stage loader later */
+	if (verbose)
+	    fprintf (stderr, "2nd stage:  write external memory\n");
+    }
+    
+    /* scan the image, first (maybe only) time */
+    ctx.device = fd;
+    ctx.total = ctx.count = 0;
+    status = parse_ihex (image, &ctx, is_external, ram_poke);
+    if (status < 0) {
+	fprintf (stderr, "unable to download %s\n", path);
+	return status;
+    }
 
-	    cp = fgets(buf, sizeof buf, image);
-	    if (cp == 0)
-		  break;
+    /* second part of 2nd stage */
+    if (stage) {
+	ctx.mode = skip_external;
 
-	    if (buf[0] != ':') {
-		  fprintf(stderr, "not an ihex record: %s", buf);
-		  return -2;
-	    }
+	/* don't let CPU run while we overwrite the 1st stage loader */
+	if (!ezusb_cpucs (fd, cpucs_addr, 0))
+	    return -1;
 
-	      /* Read the length field */
-	    tmp = buf[3];
-	    buf[3] = 0;
-	    len = strtoul(buf+1, 0, 16);
-	    buf[3] = tmp;
+	/* at least write the interrupt vectors (at 0x0000) for reset! */
+	rewind (image);
+	if (verbose)
+	    fprintf (stderr, "2nd stage:  write on-chip memory\n");
+	status = parse_ihex (image, &ctx, is_external, ram_poke);
+	if (status < 0) {
+	    fprintf (stderr, "unable to completely download %s\n", path);
+	    return status;
+	}
+    }
 
-	      /* Read the target offset */
-	    tmp = buf[7];
-	    buf[7] = 0;
-	    off = strtoul(buf+3, 0, 16);
-	    buf[7] = tmp;
+    if (verbose)
+	fprintf (stderr, "... WROTE: %d bytes, %d segments, avg %d\n",
+	    ctx.total, ctx.count, ctx.total / ctx.count);
+	
+    /* now reset the CPU so it runs what we just downloaded */
+    if (!ezusb_cpucs (fd, cpucs_addr, 1))
+	return -1;
 
-              /* Initialize data_addr */
-            if (first_line) {
-		  data_addr = off;
-		  first_line = 0;
-            }
-
-	      /* Read the record type */
-	    tmp = buf[9];
-	    buf[9] = 0;
-	    type = strtoul(buf+7, 0, 16);
-	    buf[9] = tmp;
-
-	      /* If this is an EOF record, then break. */
-	    if (type ==1)
-		  break;
-
-	    if (type != 0) {
-		  fprintf(stderr, "unsupported record type: %u\n", type);
-		  return -3;
-	    }
-
-	    if ((len * 2) + 11 >= strlen(buf)) {
-		  fprintf(stderr, "record too short?\n");
-		  return -4;
-	    }
-
-	    /* Sanity check: this is only a first-stage loader, we can only
-	     * load some parts of the on-chip SRAM.  Loading from a "big" I2C
-	     * serial ROM (more than USB vid/pid) has the same constraints.
-	     *
-	     * Bigger programs use "real ROM", or need two-stage loaders that
-	     * know the physical memory model in use.  Such models range from
-	     * simple "64K I+D" or "64K I + 64K D", to bank switching setups.
-	     *
-	     * If you have a Cypress development kit, the "Vend_Ax" sample
-	     * shows one way to implement second stage loader firmware for
-	     * that type of hardware (64K I+D).  Firmware implements 0xA3
-	     * requests to write external RAM, and then the hardware's 0xA0
-	     * requests can overwrite that loader firmware and renumerate.
-	     */
-	    if (fx2) {
-		/* 1st 8KB for data/program, 0x0000-0x1fff */
-		if (off <= 0x1fff) {
-		    if ((off + len) > 0x2000) {
-			fprintf(stderr, need2stage, off);
-			return -5;
-		    } /* else OK */
-		/* and 512 for data, 0xe000-0xe1ff */
-		} else if (off >= 0xe000 && off <= 0xe1ff) {
-		    if ((off + len) > 0xe200) {
-			fprintf(stderr, need2stage, off);
-			return -5;
-		    } /* else OK */
-		} else {
-		    fprintf(stderr, need2stage, off);
-		    return -5;
-		}
-	    } else {
-		/* with 8KB RAM, 0x0000-0x1b3f can be written
-		 * unclear about unused bulk buffers 0x1b3f-0x1f3f
-		 * firmware can set ISODISAB for 2KB at 0x2000-0x27ff
-		 * we can't tell if it's a 4KB device here
-		 */
-		if (off <= 0x1b3f) {
-		    if ((off + len) > 0x1b40) {
-			fprintf(stderr, need2stage, off);
-			return -5;
-		    } /* else OK */
-		} else {
-		    fprintf(stderr, need2stage, off);
-		    return -5;
-		}
-	    }
-
-	    /* flush the saved data if it's not contiguous,
-	     * or when we've buffered as much as we can.
-	     */
-	    if (data_len != 0 && (off != (data_addr + data_len)
-		    || (data_len + len) > sizeof data)) {
-		rc = ezusb_poke(fd, data_addr, data, data_len);
-		if (rc < 0) {
-		      fprintf(stderr, "failed to write data to device\n");
-		      return -1;
-		}
-		data_addr = off;
-		data_len = 0;
-	    }
-
-	    /* append to saved data, flush later */
-	    for (idx = 0, cp = buf+9 ;  idx < len ;  idx += 1, cp += 2) {
-		  tmp = cp[2];
-		  cp[2] = 0;
-		  data[data_len + idx] = strtoul(cp, 0, 16);
-		  cp[2] = tmp;
-	    }
-	    data_len += len;
-      }
-
-
-      /* flush any data remaining */
-      if (data_len != 0) {
-	  rc = ezusb_poke(fd, data_addr, data, data_len);
-	  if (rc < 0) {
-	      fprintf(stderr, "failed to write data to device\n");
-	      return -1;
-	  }
-      }
-
-	/* This writes the CPUCS register on the target device to
-	   release the host reset. After this, the processor is free
-	   to renumerate, or whatever. */
-      { unsigned char cpucs = 0x00;
-        ezusb_poke(fd, cpucs_addr, &cpucs, 1);
-      }
-
-
-      return 0;
+    return 0;
 }
 
+/*****************************************************************************/
+
+/*
+ * For writing to EEPROM using a 2nd stage loader
+ */
+struct eeprom_poke_context {
+    int			device;
+    unsigned short	ee_addr;	/* next free address */
+    int			last;
+};
+
+static int eeprom_poke (
+    void		*context,
+    unsigned short	addr,
+    int			external,
+    const unsigned char	*data,
+    size_t		len
+) {
+    struct eeprom_poke_context	*ctx = context;
+    int			rc;
+    unsigned char	header [4];
+
+    if (external) {
+	fprintf (stderr, "EEPROM can't init %d bytes external memory at 0x%04x\n",
+	    len, addr);
+	return -EINVAL;
+    }
+
+    if (len > 1023) {
+	fprintf (stderr, "not fragmenting %d bytes\n", len);
+	return -EDOM;
+    }
+
+    /* NOTE:  No retries here.  They don't seem to be needed;
+     * could be added if that changes.
+     */
+
+    /* write header */
+    header [0] = len >> 8;
+    header [1] = len;
+    header [2] = addr >> 8;
+    header [3] = addr;
+    if (ctx->last)
+	header [0] |= 0x80;
+    if ((rc = ezusb_write (ctx->device, "write EEPROM segment header",
+		    RW_EEPROM,
+		    ctx->ee_addr, header, 4)) < 0)
+	return rc;
+
+    /* write code/data */
+    if ((rc = ezusb_write (ctx->device, "write EEPROM segment",
+		    RW_EEPROM,
+		    ctx->ee_addr + 4, data, len)) < 0)
+	return rc;
+
+    /* next shouldn't overwrite it */
+    ctx->ee_addr += 4 + len;
+
+    return 0;
+}
+
+/*
+ * Load an Intel HEX file into target (large) EEPROM, set up to boot from
+ * that EEPROM using the specified microcontroller-specific config byte.
+ * (Defaults:  FX2 0x08, FX 0x00.)
+ *
+ * Caller must have pre-loaded a second stage loader that knows how
+ * to handle the EEPROM write requests.
+ */
+int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
+{
+    FILE			*image;
+    unsigned short		cpucs_addr;
+    int				(*is_external)(unsigned short off, size_t len);
+    struct eeprom_poke_context	ctx;
+    int				status;
+    unsigned char		value;
+
+    if (ezusb_get_eeprom_type (dev, &value) != 1 || value != 1) {
+	fprintf (stderr, "don't see a large enough EEPROM\n");
+	return -1;
+    }
+
+    image = fopen (path, "r");
+    if (image == 0) {
+	fprintf (stderr, "%s: unable to open for input.\n", path);
+	return -2;
+    } else if (verbose)
+	fprintf (stderr, "open EEPROM hexfile image %s\n", path);
+
+    if (verbose)
+	fprintf (stderr, "2nd stage:  write boot EEPROM\n");
+
+    /* EZ-USB FX and FX2 devices differ, apart from the 8051 core */
+    if (fx2) {
+	cpucs_addr = 0xe600;
+	is_external = fx2_is_external;
+	ctx.ee_addr = 8;
+	config &= 0x4f;
+	fprintf (stderr,
+	    "FX2:  config = 0x%02x, %sconnected, I2C = %d KHz\n",
+	    config,
+	    (config & 0x40) ? "dis" : "",
+		// NOTE:  old chiprevs let CPU clock speed be set
+		// or cycle inverted here.  You shouldn't use those.
+		// (Silicon revs B, C?  Rev E is nice!)
+	    (config & 0x01) ? 400 : 100
+	    );
+    } else {
+	cpucs_addr = 0x7f92;
+	is_external = fx_is_external;
+	ctx.ee_addr = 9;
+	config &= 0x03;
+	fprintf (stderr,
+	    "FX:  config = 0x%02x, %d MHz%s, I2C = %d KHz\n",
+	    config,
+	    ((config & 0x04) ? 48 : 24),
+	    (config & 0x02) ? " inverted" : "",
+	    (config & 0x01) ? 400 : 100
+	    );
+    }
+
+    // FIXME  This won't work for the original EZ-USB chips, the
+    // AnchorChips EZ-USB "2100 series".  Those read from EEPROMs
+    // starting at address 7, don't have any config (or reserved)
+    // byte (affecting at least CPU and I2C clocking), and use
+    // a different EEPROM type byte (B2, not B6 or C2).
+
+
+    /* make sure the EEPROM won't be used for booting,
+     * in case of problems writing it
+     */
+    value = 0x00;
+    status = ezusb_write (dev, "mark EEPROM as unbootable",
+	    RW_EEPROM, 0, &value, sizeof value);
+    if (status < 0)
+	return status;
+
+    /* scan the image, write to EEPROM */
+    ctx.device = dev;
+    ctx.last = 0;
+    status = parse_ihex (image, &ctx, is_external, eeprom_poke);
+    if (status < 0) {
+	fprintf (stderr, "unable to write EEPROM %s\n", path);
+	return status;
+    }
+
+    /* append a reset command */
+    value = 0;
+    ctx.last = 1;
+    status = eeprom_poke (&ctx, cpucs_addr, 0, &value, sizeof value);
+    if (status < 0) {
+	fprintf (stderr, "unable to append reset to EEPROM %s\n", path);
+	return status;
+    }
+
+    /* write the config byte */
+    value = config;
+    status = ezusb_write (dev, "write config byte",
+	    RW_EEPROM, 7, &value, sizeof value);
+    if (status < 0)
+	return status;
+    
+    /* EZ-USB FX has a reserved byte */
+    if (!fx2) {
+	value = 0;
+	status = ezusb_write (dev, "write reserved byte",
+		RW_EEPROM, 8, &value, sizeof value);
+	if (status < 0)
+	    return status;
+    }
+
+    /* make the EEPROM say to boot from this EEPROM */
+    value = fx2 ? 0xC2 : 0xB6;
+    status = ezusb_write (dev, "write EEPROM type byte",
+	    RW_EEPROM, 0, &value, sizeof value);
+    if (status < 0)
+	return status;
+
+    /* Note:  VID/PID/version aren't written.  They should be
+     * written if the EEPROM type is modified (to B4 or C0).
+     */
+
+    return 0;
+}
 
 /*
  * $Log$
+ * Revision 1.4  2002/01/17 14:47:44  dbrownell
+ * init first line, remove warnings
+ *
  * Revision 1.3  2001/12/27 17:59:33  dbrownell
  * merge adjacent hex records, and optionally show writes
  *
