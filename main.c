@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2001 Stephen Williams (steve@icarus.com)
+ * Copyright (c) 2001-2002 David Brownell (dbrownell@users.sourceforge.net)
  *
  *    This source code is free software; you can redistribute it
  *    and/or modify it in source code form under the terms of the GNU
@@ -27,10 +28,14 @@
  *
  *     -I <path>       -- Download this firmware (intel hex)
  *     -2              -- it's an FX2 (USB 2.0 capable) not FX
+ *     -s <path>       -- use this second stage loader
+ *     -c <byte>       -- Download to EEPROM, with this config byte
  *
  *     -L <path>       -- Create a symbolic link to the device.
  *     -m <mode>       -- Set the permissions on the device after download.
  *     -D <path>       -- Use this device, instead of $DEVICE
+ *
+ *     -V              -- Print version ID for program
  *
  * This program is intended to be started by hotplug scripts in
  * response to a device appearing on the bus. It therefore also
@@ -54,18 +59,23 @@
 
 # include  "ezusb.h"
 
-int verbose;
+#ifndef	FXLOAD_VERSION
+#	define FXLOAD_VERSION (__DATE__ " (development)")
+#endif
 
 int main(int argc, char*argv[])
 {
-      const char*link_path = 0;
-      const char*ihex_path = 0;
-      const char*device_path = getenv("DEVICE");
-      int fx2 = 0;
-      mode_t mode = 0;
-      int opt;
+      const char	*link_path = 0;
+      const char	*ihex_path = 0;
+      const char	*device_path = getenv("DEVICE");
+      int		fx2 = 0;
+      const char	*stage1 = 0;
+      mode_t		mode = 0;
+      int		opt;
+      int		config = -1;
 
-      while ((opt = getopt(argc, argv, "2vD:I:L:m:")) != EOF) switch (opt) {
+      while ((opt = getopt(argc, argv, "2vVD:I:L:c:m:s:")) != EOF)
+      switch (opt) {
 
 	  case '2':
 	    fx2 = 1;
@@ -83,9 +93,26 @@ int main(int argc, char*argv[])
 	    link_path = optarg;
 	    break;
 
+	  case 'V':
+	    printf ("Version: %s\n", FXLOAD_VERSION);
+	    break;
+
+	  case 'c':
+	    config = strtoul (optarg, 0, 0);
+	    if (config < 0 || config > 255) {
+		fputs ("illegal config byte: ", stderr);
+		fputs (optarg, stderr);
+		goto usage;
+	    }
+	    break;
+
 	  case 'm':
 	    mode = strtoul(optarg,0,0);
 	    mode &= 0777;
+	    break;
+
+	  case 's':
+	    stage1 = optarg;
 	    break;
 
 	  case 'v':
@@ -97,13 +124,28 @@ int main(int argc, char*argv[])
 
       }
 
+      if (config >= 0) {
+	    if (!stage1 || !ihex_path) {
+		fputs ("need 2nd stage loader and firmware to write EEPROM!\n",
+		    stderr);
+		goto usage;
+	    }
+	    if (link_path || mode) {
+		fputs ("links and modes not set up when writing EEPROM\n",
+		    stderr);
+		goto usage;
+	    }
+      }
+
       if (!device_path) {
 	    fputs ("no device specified!\n", stderr);
 usage:
 	    fputs ("usage: ", stderr);
 	    fputs (argv [0], stderr);
-	    fputs (" [-2v] [-D devpath] [-I firmware_hexfile] ", stderr);
-	    fputs ("[-L link] [-m mode]\n", stderr);
+	    fputs (" [-2vV] [-D devpath]\n", stderr);
+	    fputs ("\t\t[-I firmware_hexfile] ", stderr);
+	    fputs ("[-s loader] [-c config_byte]\n", stderr);
+	    fputs ("\t\t[-L link] [-m mode]\n", stderr);
 	    fputs ("... [-D devpath] overrides DEVICE= in env\n", stderr);
 	    fputs ("... at least one of -I, -L, -m is required\n", stderr);
 	    return -1;
@@ -118,9 +160,29 @@ usage:
 		  return -1;
 	    }
 
-	    status = ezusb_load_ihex(fd, ihex_path, fx2);
-	    if (status != 0)
-		return status;
+	    if (stage1) {
+		/* first stage:  put loader into internal memory */
+		if (verbose)
+		    fprintf (stderr, "1st stage:  load 2nd stage loader\n");
+		status = ezusb_load_ram (fd, stage1, fx2, 0);
+		if (status != 0)
+		    return status;
+		
+		/* second stage ... write either EEPROM, or RAM.  */
+		if (config >= 0)
+		    status = ezusb_load_eeprom (fd, ihex_path, fx2, config);
+		else
+		    status = ezusb_load_ram (fd, ihex_path, fx2, 1);
+		if (status != 0)
+		    return status;
+	    } else {
+		/* single stage, put into internal memory */
+		if (verbose)
+		    fprintf (stderr, "single stage:  load on-chip memory\n");
+		status = ezusb_load_ram (fd, ihex_path, fx2, 0);
+		if (status != 0)
+		    return status;
+	    }
 	    
 	    /* some firmware won't renumerate, but typically it will.
 	     * link and chmod only make sense without renumeration...
@@ -155,6 +217,9 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.4  2002/01/17 14:19:28  dbrownell
+ * fix warnings
+ *
  * Revision 1.3  2001/12/27 17:54:04  dbrownell
  * forgot an important character :)
  *
