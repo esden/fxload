@@ -64,6 +64,28 @@
 #	define FXLOAD_VERSION (__DATE__ " (development)")
 #endif
 
+#include <errno.h>
+#include <syslog.h>
+#include <stdarg.h>
+
+
+static int dosyslog=0;
+
+void logerror(const char *format, ...)
+    __attribute__ ((format (__printf__, 1, 2)));
+
+void logerror(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+
+    if(dosyslog)
+    	vsyslog(LOG_ERR, format, ap);
+    else
+    	vfprintf(stderr, format, ap);
+    va_end(ap);
+}
+
 int main(int argc, char*argv[])
 {
       const char	*link_path = 0;
@@ -75,7 +97,7 @@ int main(int argc, char*argv[])
       int		opt;
       int		config = -1;
 
-      while ((opt = getopt (argc, argv, "2vV?D:I:L:c:m:s:t:")) != EOF)
+      while ((opt = getopt (argc, argv, "2vV?D:I:L:c:lm:s:t:")) != EOF)
       switch (opt) {
 
 	  case '2':		// original version of "-t fx2"
@@ -101,11 +123,14 @@ int main(int argc, char*argv[])
 	  case 'c':
 	    config = strtoul (optarg, 0, 0);
 	    if (config < 0 || config > 255) {
-		fputs ("illegal config byte: ", stderr);
-		fputs (optarg, stderr);
-		fputs ("\n", stderr);
+		logerror("illegal config byte: %s\n", optarg);
 		goto usage;
 	    }
+	    break;
+
+	  case 'l':
+	    openlog(argv[0], LOG_CONS|LOG_NOWAIT|LOG_PERROR, LOG_USER);
+	    dosyslog=1;
 	    break;
 
 	  case 'm':
@@ -122,9 +147,7 @@ int main(int argc, char*argv[])
 		    && strcmp (optarg, "fx")	// updated Cypress versions
 		    && strcmp (optarg, "fx2")	// Cypress USB 2.0 versions
 		    ) {
-		fputs ("illegal microcontroller type: ", stderr);
-		fputs (optarg, stderr);
-		fputs ("\n", stderr);
+		logerror("illegal microcontroller type: %s\n", optarg);
 		goto usage;
 	    }
 	    type = optarg;
@@ -142,28 +165,27 @@ int main(int argc, char*argv[])
 
       if (config >= 0) {
 	    if (type == 0) {
-		fputs ("must specify microcontroller type to write EEPROM!\n",
-		    stderr);
+		logerror("must specify microcontroller type %s",
+				"to write EEPROM!\n");
 		goto usage;
 	    }
 	    if (!stage1 || !ihex_path) {
-		fputs ("need 2nd stage loader and firmware to write EEPROM!\n",
-		    stderr);
+		logerror("need 2nd stage loader and firmware %s",
+				"to write EEPROM!\n");
 		goto usage;
 	    }
 	    if (link_path || mode) {
-		fputs ("links and modes not set up when writing EEPROM\n",
-		    stderr);
+		logerror("links and modes not set up when writing EEPROM\n");
 		goto usage;
 	    }
       }
 
       if (!device_path) {
-	    fputs ("no device specified!\n", stderr);
+	    logerror("no device specified!\n");
 usage:
 	    fputs ("usage: ", stderr);
 	    fputs (argv [0], stderr);
-	    fputs (" [-vV] [-t type] [-D devpath]\n", stderr);
+	    fputs (" [-vV] [-l] [-t type] [-D devpath]\n", stderr);
 	    fputs ("\t\t[-I firmware_hexfile] ", stderr);
 	    fputs ("[-s loader] [-c config_byte]\n", stderr);
 	    fputs ("\t\t[-L link] [-m mode]\n", stderr);
@@ -179,8 +201,8 @@ usage:
 	    int	fx2;
 
 	    if (fd == -1) {
-		  perror(device_path);
-		  return -1;
+		logerror("%s : %s\n", strerror(errno), device_path);
+		return -1;
 	    }
 
 	    if (type == 0) {
@@ -190,12 +212,12 @@ usage:
  		fx2 = (strcmp (type, "fx2") == 0);
 	    
 	    if (verbose)
-		fprintf (stderr, "microcontroller type: %s\n", type);
+		logerror("microcontroller type: %s\n", type);
 
 	    if (stage1) {
 		/* first stage:  put loader into internal memory */
 		if (verbose)
-		    fprintf (stderr, "1st stage:  load 2nd stage loader\n");
+		    logerror("1st stage:  load 2nd stage loader\n");
 		status = ezusb_load_ram (fd, stage1, fx2, 0);
 		if (status != 0)
 		    return status;
@@ -210,7 +232,7 @@ usage:
 	    } else {
 		/* single stage, put into internal memory */
 		if (verbose)
-		    fprintf (stderr, "single stage:  load on-chip memory\n");
+		    logerror("single stage:  load on-chip memory\n");
 		status = ezusb_load_ram (fd, ihex_path, fx2, 0);
 		if (status != 0)
 		    return status;
@@ -225,7 +247,7 @@ usage:
 	    int rc = unlink(link_path);
 	    rc = symlink(device_path, link_path);
 	    if (rc == -1) {
-		  perror(link_path);
+		  logerror("%s : %s\n", strerror(errno), link_path);
 		  return -1;
 	    }
       }
@@ -233,13 +255,13 @@ usage:
       if (mode != 0) {
 	    int rc = chmod(device_path, mode);
 	    if (rc == -1) {
-		  perror(link_path);
+		  logerror("%s : %s\n", strerror(errno), link_path);
 		  return -1;
 	    }
       }
 
       if (!ihex_path && !link_path && !mode) {
-	    fputs ("missing request! (firmware, link, or mode)\n", stderr);
+	    logerror("missing request! (firmware, link, or mode)\n");
 	    return -1;
       }
 
@@ -249,6 +271,9 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.7  2002/04/12 00:28:22  dbrownell
+ * support "-t an21" to program EEPROMs for those microcontrollers
+ *
  * Revision 1.6  2002/04/02 05:26:15  dbrownell
  * version display now noiseless (-V);
  * '-?' (usage info) convention now explicit
@@ -273,4 +298,3 @@ usage:
  *  location without need of spec file for install.
  *
  */
-

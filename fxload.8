@@ -28,6 +28,7 @@ fxload \- Firmware download to EZ-USB devices
 .SH "SYNOPSIS"
 .B fxload
 .BI "[ \-v ]"
+.BI "[ \-l ]"
 .BI "[ \-D " devpath " ]"
 .BI "[ \-I " hexfile " ]"
 .BI "[ \-t " type " ]"
@@ -172,6 +173,9 @@ Prints some diagnostics, such as download addresses and sizes,
 to standard error.  Repeat the flag
 .RB ( -vv ", " -vvv )
 to get more diagnostics.
+.TP
+.B "\-l"
+print error and verbose messages to syslog.
 .TP
 .BI "\-D " devpath
 Specifies the "usbfs" path name for the device in question,

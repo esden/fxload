@@ -34,6 +34,9 @@
 
 # include "ezusb.h"
 
+extern void logerror(const char *format, ...)
+    __attribute__ ((format (printf, 1, 2)));
+
 /*
  * This file contains functions for downloading firmware into Cypress
  * EZ-USB microcontrollers. These chips use control endpoint 0 and vendor
@@ -123,7 +126,7 @@ static inline int ctrl_msg (
     struct usbdevfs_ctrltransfer	ctrl;
 
     if (length > USHRT_MAX) {
-	fputs ("length too big", stderr);
+	logerror("length too big\n");
 	return -EINVAL;
     }
 
@@ -170,17 +173,16 @@ static int ezusb_read (
     int					status;
 
     if (verbose)
-	fprintf (stderr, "%s, addr 0x%04x len %4d (0x%04x)\n",
-		label, addr, len, len);
+	logerror("%s, addr 0x%04x len %4d (0x%04x)\n", label, addr, len, len);
     status = ctrl_msg (device,
 	USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
 	addr, 0,
 	data, len);
     if (status != len) {
 	if (status < 0)
-	    perror (label);
+	    logerror("%s: %s\n", label, strerror(errno));
 	else
-	    fprintf (stderr, "%s ==> %d\n", label, status);
+	    logerror("%s ==> %d\n", label, status);
     }
     return status;
 }
@@ -199,17 +201,16 @@ static int ezusb_write (
     int					status;
 
     if (verbose)
-	fprintf (stderr, "%s, addr 0x%04x len %4d (0x%04x)\n",
-		label, addr, len, len);
+	logerror("%s, addr 0x%04x len %4d (0x%04x)\n", label, addr, len, len);
     status = ctrl_msg (device,
 	USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
 	addr, 0,
 	(unsigned char *) data, len);
     if (status != len) {
 	if (status < 0)
-	    perror (label);
+	    logerror("%s: %s\n", label, strerror(errno));
 	else
-	    fprintf (stderr, "%s ==> %d\n", label, status);
+	    logerror("%s ==> %d\n", label, status);
     }
     return status;
 }
@@ -227,7 +228,7 @@ static int ezusb_cpucs (
     unsigned char	data = doRun ? 0 : 1;
 
     if (verbose)
-	fprintf (stderr, "%s\n", data ? "stop CPU" : "reset CPU");
+	logerror("%s\n", data ? "stop CPU" : "reset CPU");
     status = ctrl_msg (device,
 	USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
 	RW_INTERNAL,
@@ -236,9 +237,9 @@ static int ezusb_cpucs (
     if (status != 1) {
 	char *mesg = "can't modify CPUCS";
 	if (status < 0)
-	    perror (mesg);
+	    logerror("%s: %s\n", mesg, strerror(errno));
 	else
-	    fprintf (stderr, "%s\n", mesg);
+	    logerror("%s\n", mesg);
 	return 0;
     } else
 	return 1;
@@ -305,7 +306,7 @@ int parse_ihex (
 
 	cp = fgets(buf, sizeof buf, image);
 	if (cp == 0) {
-	    fprintf (stderr, "EOF without EOF record!\n");
+	    logerror("EOF without EOF record!\n");
 	    break;
 	}
 
@@ -314,7 +315,7 @@ int parse_ihex (
 	    continue;
 
 	if (buf[0] != ':') {
-	    fprintf (stderr, "not an ihex record: %s", buf);
+	    logerror("not an ihex record: %s", buf);
 	    return -2;
 	}
 
@@ -324,7 +325,7 @@ int parse_ihex (
 	    *cp = 0;
 
 	if (verbose >= 3)
-	    fprintf (stderr, "** LINE: %s\n", buf);
+	    logerror("** LINE: %s\n", buf);
 
 	/* Read the length field (up to 16 bytes) */
 	tmp = buf[3];
@@ -353,17 +354,17 @@ int parse_ihex (
 	/* If this is an EOF record, then make it so. */
 	if (type == 1) {
 	    if (verbose >= 2)
-		fprintf (stderr, "EOF on hexfile\n");
+		logerror("EOF on hexfile\n");
 	    break;
 	}
 
 	if (type != 0) {
-	    fprintf (stderr, "unsupported record type: %u\n", type);
+	    logerror("unsupported record type: %u\n", type);
 	    return -3;
 	}
 
 	if ((len * 2) + 11 > strlen(buf)) {
-	    fprintf (stderr, "record too short?\n");
+	    logerror("record too short?\n");
 	    return -4;
 	}
 
@@ -445,7 +446,7 @@ static int ram_poke (
     switch (ctx->mode) {
     case internal_only:		/* CPU should be stopped */
 	if (external) {
-	    fprintf (stderr, "can't write %d bytes external memory at 0x%04x\n",
+	    logerror("can't write %d bytes external memory at 0x%04x\n",
 		len, addr);
 	    return -EINVAL;
 	}
@@ -453,7 +454,7 @@ static int ram_poke (
     case skip_internal:		/* CPU must be running */
 	if (!external) {
 	    if (verbose >= 2) {
-		fprintf (stderr, "SKIP on-chip RAM, %d bytes at 0x%04x\n",
+		logerror("SKIP on-chip RAM, %d bytes at 0x%04x\n",
 		    len, addr);
 	    }
 	    return 0;
@@ -462,14 +463,14 @@ static int ram_poke (
     case skip_external:		/* CPU should be stopped */
 	if (external) {
 	    if (verbose >= 2) {
-		fprintf (stderr, "SKIP external RAM, %d bytes at 0x%04x\n",
+		logerror("SKIP external RAM, %d bytes at 0x%04x\n",
 		    len, addr);
 	    }
 	    return 0;
 	}
 	break;
     default:
-	fprintf (stderr, "bug\n");
+	logerror("bug\n");
 	return -EDOM;
     }
 
@@ -515,10 +516,10 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 
     image = fopen (path, "r");
     if (image == 0) {
-	fprintf (stderr, "%s: unable to open for input.\n", path);
+	logerror("%s: unable to open for input.\n", path);
 	return -2;
     } else if (verbose)
-	fprintf (stderr, "open RAM hexfile image %s\n", path);
+	logerror("open RAM hexfile image %s\n", path);
 
     /* EZ-USB original/FX and FX2 devices differ, apart from the 8051 core */
     if (fx2) {
@@ -543,7 +544,7 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 
 	/* let CPU run; overwrite the 2nd stage loader later */
 	if (verbose)
-	    fprintf (stderr, "2nd stage:  write external memory\n");
+	    logerror("2nd stage:  write external memory\n");
     }
     
     /* scan the image, first (maybe only) time */
@@ -551,7 +552,7 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
     ctx.total = ctx.count = 0;
     status = parse_ihex (image, &ctx, is_external, ram_poke);
     if (status < 0) {
-	fprintf (stderr, "unable to download %s\n", path);
+	logerror("unable to download %s\n", path);
 	return status;
     }
 
@@ -566,16 +567,16 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 	/* at least write the interrupt vectors (at 0x0000) for reset! */
 	rewind (image);
 	if (verbose)
-	    fprintf (stderr, "2nd stage:  write on-chip memory\n");
+	    logerror("2nd stage:  write on-chip memory\n");
 	status = parse_ihex (image, &ctx, is_external, ram_poke);
 	if (status < 0) {
-	    fprintf (stderr, "unable to completely download %s\n", path);
+	    logerror("unable to completely download %s\n", path);
 	    return status;
 	}
     }
 
     if (verbose)
-	fprintf (stderr, "... WROTE: %d bytes, %d segments, avg %d\n",
+	logerror("... WROTE: %d bytes, %d segments, avg %d\n",
 	    ctx.total, ctx.count, ctx.total / ctx.count);
 	
     /* now reset the CPU so it runs what we just downloaded */
@@ -608,14 +609,14 @@ static int eeprom_poke (
     unsigned char	header [4];
 
     if (external) {
-	fprintf (stderr,
+      logerror(
 	    "EEPROM can't init %d bytes external memory at 0x%04x\n",
 	    len, addr);
 	return -EINVAL;
     }
 
     if (len > 1023) {
-	fprintf (stderr, "not fragmenting %d bytes\n", len);
+	logerror("not fragmenting %d bytes\n", len);
 	return -EDOM;
     }
 
@@ -665,19 +666,19 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
     unsigned char		value, first_byte;
 
     if (ezusb_get_eeprom_type (dev, &value) != 1 || value != 1) {
-	fprintf (stderr, "don't see a large enough EEPROM\n");
+	logerror("don't see a large enough EEPROM\n");
 	return -1;
     }
 
     image = fopen (path, "r");
     if (image == 0) {
-	fprintf (stderr, "%s: unable to open for input.\n", path);
+	logerror("%s: unable to open for input.\n", path);
 	return -2;
     } else if (verbose)
-	fprintf (stderr, "open EEPROM hexfile image %s\n", path);
+	logerror("open EEPROM hexfile image %s\n", path);
 
     if (verbose)
-	fprintf (stderr, "2nd stage:  write boot EEPROM\n");
+	logerror("2nd stage:  write boot EEPROM\n");
 
     /* EZ-USB family devices differ, apart from the 8051 core */
     if (strcmp ("fx2", type) == 0) {
@@ -686,7 +687,7 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 	is_external = fx2_is_external;
 	ctx.ee_addr = 8;
 	config &= 0x4f;
-	fprintf (stderr,
+	logerror(
 	    "FX2:  config = 0x%02x, %sconnected, I2C = %d KHz\n",
 	    config,
 	    (config & 0x40) ? "dis" : "",
@@ -702,7 +703,7 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 	is_external = fx_is_external;
 	ctx.ee_addr = 9;
 	config &= 0x07;
-	fprintf (stderr,
+	logerror(
 	    "FX:  config = 0x%02x, %d MHz%s, I2C = %d KHz\n",
 	    config,
 	    ((config & 0x04) ? 48 : 24),
@@ -716,10 +717,10 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 	is_external = fx_is_external;
 	ctx.ee_addr = 7;
 	config = 0;
-	fprintf (stderr, "AN21xx:  no EEPROM config byte\n");
+	logerror("AN21xx:  no EEPROM config byte\n");
 
     } else {
-	fprintf (stderr, "?? Unrecognized microcontroller type %s ??\n", type);
+	logerror("?? Unrecognized microcontroller type %s ??\n", type);
 	return -1;
     }
 
@@ -737,7 +738,7 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
     ctx.last = 0;
     status = parse_ihex (image, &ctx, is_external, eeprom_poke);
     if (status < 0) {
-	fprintf (stderr, "unable to write EEPROM %s\n", path);
+	logerror("unable to write EEPROM %s\n", path);
 	return status;
     }
 
@@ -746,7 +747,7 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
     ctx.last = 1;
     status = eeprom_poke (&ctx, cpucs_addr, 0, &value, sizeof value);
     if (status < 0) {
-	fprintf (stderr, "unable to append reset to EEPROM %s\n", path);
+	logerror("unable to append reset to EEPROM %s\n", path);
 	return status;
     }
 
@@ -783,6 +784,11 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 
 /*
  * $Log$
+ * Revision 1.8  2005/01/11 03:08:12  dbrownell
+ * Patch from Giovanni Mels, so the string is always null terminated
+ * rather than only with "verbose >= 3" ... and the length test is
+ * changed accordingly.
+ *
  * Revision 1.7  2002/04/12 00:25:58  dbrownell
  * - support older AnchorChips style EEPROMs too
  * - minor bugfix for config byte mask in FX
