@@ -26,3 +26,10 @@ conjunction with USB hotplugging, to load device firmware.
 
 Post any bug reports to the linux-hotplug-devel or linux-usb-devel lists.
 
+If you modify the code, the GPL requires that you make your updates
+generally available (under most circumstances).  Providing them in the
+form of patches against the current CVS ("cvs diff -u"), or the last
+release ("diff -u old new") is most useful, since otherwise it's awkward
+to integrate such changes into the standard distribution.
+
+$Id$
