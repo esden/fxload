@@ -64,7 +64,7 @@ int main(int argc, char*argv[])
       mode_t mode = 0;
       int opt;
 
-      while ((opt = getopt(argc, argv, "2D:I:L:m:")) != EOF) switch (opt) {
+      while ((opt = getopt(argc, argv, "2vD:I:L:m:")) != EOF) switch (opt) {
 
 	  case '2':
 	    fx2 = 1;
@@ -154,6 +154,9 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.2  2001/12/27 17:43:29  dbrownell
+ * fail on firmware download errors; add "-v" flag
+ *
  * Revision 1.1  2001/06/12 00:00:50  stevewilliams
  *  Added the fxload program.
  *  Rework root makefile and hotplug.spec to install in prefix
