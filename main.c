@@ -27,7 +27,7 @@
  * looking for the device.
  *
  *     -I <path>       -- Download this firmware (intel hex)
- *     -2              -- it's an FX2 (USB 2.0 capable) not FX
+ *     -t <type>       -- uController type: an21, fx, fx2
  *     -s <path>       -- use this second stage loader
  *     -c <byte>       -- Download to EEPROM, with this config byte
  *
@@ -51,6 +51,7 @@
 # include  <stdlib.h>
 # include  <stdio.h>
 # include  <getopt.h>
+# include  <string.h>
 
 # include  <sys/types.h>
 # include  <sys/stat.h>
@@ -68,17 +69,17 @@ int main(int argc, char*argv[])
       const char	*link_path = 0;
       const char	*ihex_path = 0;
       const char	*device_path = getenv("DEVICE");
-      int		fx2 = 0;
+      const char	*type = 0;
       const char	*stage1 = 0;
       mode_t		mode = 0;
       int		opt;
       int		config = -1;
 
-      while ((opt = getopt (argc, argv, "2vV?D:I:L:c:m:s:")) != EOF)
+      while ((opt = getopt (argc, argv, "2vV?D:I:L:c:m:s:t:")) != EOF)
       switch (opt) {
 
-	  case '2':
-	    fx2 = 1;
+	  case '2':		// original version of "-t fx2"
+	    type = "fx2";
 	    break;
 
 	  case 'D':
@@ -102,6 +103,7 @@ int main(int argc, char*argv[])
 	    if (config < 0 || config > 255) {
 		fputs ("illegal config byte: ", stderr);
 		fputs (optarg, stderr);
+		fputs ("\n", stderr);
 		goto usage;
 	    }
 	    break;
@@ -115,6 +117,19 @@ int main(int argc, char*argv[])
 	    stage1 = optarg;
 	    break;
 
+	  case 't':
+	    if (strcmp (optarg, "an21")		// original AnchorChips parts
+		    && strcmp (optarg, "fx")	// updated Cypress versions
+		    && strcmp (optarg, "fx2")	// Cypress USB 2.0 versions
+		    ) {
+		fputs ("illegal microcontroller type: ", stderr);
+		fputs (optarg, stderr);
+		fputs ("\n", stderr);
+		goto usage;
+	    }
+	    type = optarg;
+	    break;
+
 	  case 'v':
 	    verbose++;
 	    break;
@@ -126,6 +141,11 @@ int main(int argc, char*argv[])
       }
 
       if (config >= 0) {
+	    if (type == 0) {
+		fputs ("must specify microcontroller type to write EEPROM!\n",
+		    stderr);
+		goto usage;
+	    }
 	    if (!stage1 || !ihex_path) {
 		fputs ("need 2nd stage loader and firmware to write EEPROM!\n",
 		    stderr);
@@ -143,11 +163,12 @@ int main(int argc, char*argv[])
 usage:
 	    fputs ("usage: ", stderr);
 	    fputs (argv [0], stderr);
-	    fputs (" [-2vV] [-D devpath]\n", stderr);
+	    fputs (" [-vV] [-t type] [-D devpath]\n", stderr);
 	    fputs ("\t\t[-I firmware_hexfile] ", stderr);
 	    fputs ("[-s loader] [-c config_byte]\n", stderr);
 	    fputs ("\t\t[-L link] [-m mode]\n", stderr);
 	    fputs ("... [-D devpath] overrides DEVICE= in env\n", stderr);
+	    fputs ("... device types:  one of an21, fx, fx2\n", stderr);
 	    fputs ("... at least one of -I, -L, -m is required\n", stderr);
 	    return -1;
       }
@@ -155,11 +176,21 @@ usage:
       if (ihex_path) {
 	    int fd = open(device_path, O_RDWR);
 	    int status;
+	    int	fx2;
 
 	    if (fd == -1) {
 		  perror(device_path);
 		  return -1;
 	    }
+
+	    if (type == 0) {
+	    	type = "fx";	/* an21-compatible for most purposes */
+		fx2 = 0;
+	    } else
+ 		fx2 = (strcmp (type, "fx2") == 0);
+	    
+	    if (verbose)
+		fprintf (stderr, "microcontroller type: %s\n", type);
 
 	    if (stage1) {
 		/* first stage:  put loader into internal memory */
@@ -171,7 +202,7 @@ usage:
 		
 		/* second stage ... write either EEPROM, or RAM.  */
 		if (config >= 0)
-		    status = ezusb_load_eeprom (fd, ihex_path, fx2, config);
+		    status = ezusb_load_eeprom (fd, ihex_path, type, config);
 		else
 		    status = ezusb_load_ram (fd, ihex_path, fx2, 1);
 		if (status != 0)
@@ -218,6 +249,10 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.6  2002/04/02 05:26:15  dbrownell
+ * version display now noiseless (-V);
+ * '-?' (usage info) convention now explicit
+ *
  * Revision 1.5  2002/02/26 20:10:28  dbrownell
  * - "-s loader" option for 2nd stage loader
  * - "-c byte" option to write EEPROM with 2nd stage

@@ -39,17 +39,18 @@ extern int ezusb_load_ram (int dev, const char *path, int fx2, int stage);
  * The file is assumed to be in Intel HEX format.  This uses the right
  * CPUCS address to terminate the EEPROM load with a reset command,
  * where FX parts behave differently than FX2 ones.  The configuration
- * byte is as provided here, and the EEPROM type is set so that the
- * microcontroller will boot from it.
+ * byte is as provided here (zero for an21xx parts) and the EEPROM
+ * type is set so that the microcontroller will boot from it.
  * 
  * The caller must have preloaded a second stage loader that knows
  * how to respond to the EEPROM write request.
- *
- * NOTE:  this doesn't currently understand the original Anchorchips
- * version of the EZ-USB, which uses a slightly different scheme for
- * bootstrapping from EEPROMs.  Only the Cypress versions are supported.
  */
-extern int ezusb_load_eeprom (int dev, const char *path, int fx2, int config);
+extern int ezusb_load_eeprom (
+	int dev,		/* usbfs device handle */
+	const char *path,	/* path to hexfile */
+	const char *type,	/* fx, fx2, an21 */
+	int config		/* config byte for fx/fx2; else zero */
+	);
 
 
 /* boolean flag, says whether to write extra messages to stderr */
@@ -58,6 +59,9 @@ extern int verbose;
 
 /*
  * $Log$
+ * Revision 1.2  2002/02/26 19:55:05  dbrownell
+ * 2nd stage loader support
+ *
  * Revision 1.1  2001/06/12 00:00:50  stevewilliams
  *  Added the fxload program.
  *  Rework root makefile and hotplug.spec to install in prefix
