@@ -38,8 +38,8 @@
  * This file contains functions for downloading firmware into Cypress
  * EZ-USB microcontrollers. These chips use control endpoint 0 and vendor
  * specific commands to support writing into the on-chip SRAM. They also
- * supports writing into the CPUCS register, and this is how we reset
- * the processor.
+ * support writing into the CPUCS register, which is how we reset the
+ * processor after loading firmware (including the reset vector).
  *
  * A second stage loader must be used when writing to off-chip memory,
  * or when downloading firmare into the bootstrap I2C EEPROM which may
@@ -170,8 +170,8 @@ static int ezusb_read (
     int					status;
 
     if (verbose)
-	fprintf (stderr, "%s, addr 0x%04x len = %d\n",
-		label, addr, len);
+	fprintf (stderr, "%s, addr 0x%04x len %4d (0x%04x)\n",
+		label, addr, len, len);
     status = ctrl_msg (device,
 	USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
 	addr, 0,
@@ -199,8 +199,8 @@ static int ezusb_write (
     int					status;
 
     if (verbose)
-	fprintf (stderr, "%s, addr 0x%04x len = %d\n",
-		label, addr, len);
+	fprintf (stderr, "%s, addr 0x%04x len %4d (0x%04x)\n",
+		label, addr, len, len);
     status = ctrl_msg (device,
 	USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
 	addr, 0,
@@ -318,7 +318,7 @@ int parse_ihex (
 	    return -2;
 	}
 
-	if (verbose >= 2) {
+	if (verbose >= 3) {
 	    cp = strchr (buf, '\n');
 	    if (cp)
 		*cp = 0;
@@ -375,6 +375,7 @@ int parse_ihex (
 	 */
 	if (data_len != 0
 		    && (off != (data_addr + data_len)
+			// || !merge
 			|| (data_len + len) > sizeof data)) {
 	    if (is_external)
 		external = is_external (data_addr, data_len);
@@ -400,7 +401,7 @@ int parse_ihex (
     if (data_len != 0) {
 	if (is_external)
 	    external = is_external (data_addr, data_len);
-	rc = poke (context, data_addr, 0, data, data_len);
+	rc = poke (context, data_addr, external, data, data_len);
 	if (rc < 0)
 	    return -1;
     }
@@ -490,7 +491,7 @@ static int ram_poke (
 }
 
 /*
- * Load an Intel HEX file into target RAM. The fd is the open "usbdevfs"
+ * Load an Intel HEX file into target RAM. The fd is the open "usbfs"
  * device, and the path is the name of the source file. Open the file,
  * parse the bytes, and write them in one or two phases.
  *
@@ -535,7 +536,7 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 	if (!ezusb_cpucs (fd, cpucs_addr, 0))
 	    return -1;
 
-    /* first part of 2 stage loader */
+    /* 2nd stage, first part? loader was already downloaded */
     } else {
 	ctx.mode = skip_internal;
 
@@ -553,7 +554,7 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 	return status;
     }
 
-    /* second part of 2nd stage */
+    /* second part of 2nd stage: rescan */
     if (stage) {
 	ctx.mode = skip_external;
 
@@ -606,7 +607,8 @@ static int eeprom_poke (
     unsigned char	header [4];
 
     if (external) {
-	fprintf (stderr, "EEPROM can't init %d bytes external memory at 0x%04x\n",
+	fprintf (stderr,
+	    "EEPROM can't init %d bytes external memory at 0x%04x\n",
 	    len, addr);
 	return -EINVAL;
     }
@@ -771,6 +773,12 @@ int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
 
 /*
  * $Log$
+ * Revision 1.5  2002/02/26 20:06:31  dbrownell
+ * - Rewrite for 2nd stage loader support, so this can write
+ *   to external RAM and (given the right loader) EEPROM.
+ * - Handle usbfs API changes in Linux kernel 2.5.
+ * - A "more verbose" option.
+ *
  * Revision 1.4  2002/01/17 14:47:44  dbrownell
  * init first line, remove warnings
  *
