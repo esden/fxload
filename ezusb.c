@@ -31,6 +31,10 @@
  * specific commands to support writing into the on-chip SRAM. It also
  * supports writing into the CPUCS register, and this is how we reset
  * the processor.
+ *
+ * These Cypress devices are 8-bit 8051 based microcontrollers with
+ * special support for USB I/O.  They come in several packages, and
+ * some can be set up with external memory when device costs allow.
  */
 
 
@@ -100,6 +104,9 @@ static int ezusb_poke(int fd, unsigned addr,
 
       return 0;
 }
+
+static const char need2stage [] =
+    "need two stage loader to load memory at %#04x\n";
 
 /*
  * Load an intel HEX file into the target. The fd is the open USB
@@ -183,6 +190,46 @@ int ezusb_load_ihex(int fd, const char*path, int fx2)
 		  return -4;
 	    }
 
+	    /* Sanity check: this is only a first-stage loader, we can only
+	     * load some parts of the on-chip SRAM.  Loading from a "big" I2C
+	     * serial ROM (more than USB vid/pid) has the same constraints.
+	     *
+	     * Bigger programs use "real ROM", or need two-stage loaders that
+	     * know the physical memory model in use.  Such models range from
+	     * simple "64K I+D" or "64K I + 64K D", to bank switching setups.
+	     */
+	    if (fx2) {
+		/* 1st 8KB for data/program, 0x0000-0x1fff */
+		if (off <= 0x1fff) {
+		    if ((off + len) > 0x2000) {
+			fprintf(stderr, need2stage, off);
+			return -5;
+		    } /* else OK */
+		/* and 512 for data, 0xe000-0xe1ff */
+		} else if (off >= 0xe000 && off <= 0xe1ff) {
+		    if ((off + len) > 0xe200) {
+			fprintf(stderr, need2stage, off);
+			return -5;
+		    } /* else OK */
+		} else {
+		    fprintf(stderr, need2stage, off);
+		    return -5;
+		}
+	    } else {
+		/* with 8KB RAM, 0x0000-0x1b3f can be written
+		 * here; we can't tell if it's a 4KB device here
+		 */
+		if (off <= 0x1b3f) {
+		    if ((off + len) > 0x1b40) {
+			fprintf(stderr, need2stage, off);
+			return -5;
+		    } /* else OK */
+		} else {
+		    fprintf(stderr, need2stage, off);
+		    return -5;
+		}
+	    }
+
 	    for (idx = 0, cp = buf+9 ;  idx < len ;  idx += 1, cp += 2) {
 		  tmp = cp[2];
 		  cp[2] = 0;
@@ -212,5 +259,10 @@ int ezusb_load_ihex(int fd, const char*path, int fx2)
 
 /*
  * $Log$
+ * Revision 1.1  2001/06/12 00:00:50  stevewilliams
+ *  Added the fxload program.
+ *  Rework root makefile and hotplug.spec to install in prefix
+ *  location without need of spec file for install.
+ *
  */
 
