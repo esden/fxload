@@ -649,19 +649,19 @@ static int eeprom_poke (
 /*
  * Load an Intel HEX file into target (large) EEPROM, set up to boot from
  * that EEPROM using the specified microcontroller-specific config byte.
- * (Defaults:  FX2 0x08, FX 0x00.)
+ * (Defaults:  FX2 0x08, FX 0x00, AN21xx n/a)
  *
  * Caller must have pre-loaded a second stage loader that knows how
  * to handle the EEPROM write requests.
  */
-int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
+int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 {
     FILE			*image;
     unsigned short		cpucs_addr;
     int				(*is_external)(unsigned short off, size_t len);
     struct eeprom_poke_context	ctx;
     int				status;
-    unsigned char		value;
+    unsigned char		value, first_byte;
 
     if (ezusb_get_eeprom_type (dev, &value) != 1 || value != 1) {
 	fprintf (stderr, "don't see a large enough EEPROM\n");
@@ -678,8 +678,9 @@ int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
     if (verbose)
 	fprintf (stderr, "2nd stage:  write boot EEPROM\n");
 
-    /* EZ-USB FX and FX2 devices differ, apart from the 8051 core */
-    if (fx2) {
+    /* EZ-USB family devices differ, apart from the 8051 core */
+    if (strcmp ("fx2", type) == 0) {
+	first_byte = 0xC2;
 	cpucs_addr = 0xe600;
 	is_external = fx2_is_external;
 	ctx.ee_addr = 8;
@@ -693,11 +694,13 @@ int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
 		// (Silicon revs B, C?  Rev E is nice!)
 	    (config & 0x01) ? 400 : 100
 	    );
-    } else {
+
+    } else if (strcmp ("fx", type) == 0) {
+	first_byte = 0xB6;
 	cpucs_addr = 0x7f92;
 	is_external = fx_is_external;
 	ctx.ee_addr = 9;
-	config &= 0x03;
+	config &= 0x07;
 	fprintf (stderr,
 	    "FX:  config = 0x%02x, %d MHz%s, I2C = %d KHz\n",
 	    config,
@@ -705,14 +708,19 @@ int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
 	    (config & 0x02) ? " inverted" : "",
 	    (config & 0x01) ? 400 : 100
 	    );
+
+    } else if (strcmp ("an21", type) == 0) {
+	first_byte = 0xB2;
+	cpucs_addr = 0x7f92;
+	is_external = fx_is_external;
+	ctx.ee_addr = 7;
+	config = 0;
+	fprintf (stderr, "AN21xx:  no EEPROM config byte\n");
+
+    } else {
+	fprintf (stderr, "?? Unrecognized microcontroller type %s ??\n", type);
+	return -1;
     }
-
-    // FIXME  This won't work for the original EZ-USB chips, the
-    // AnchorChips EZ-USB "2100 series".  Those read from EEPROMs
-    // starting at address 7, don't have any config (or reserved)
-    // byte (affecting at least CPU and I2C clocking), and use
-    // a different EEPROM type byte (B2, not B6 or C2).
-
 
     /* make sure the EEPROM won't be used for booting,
      * in case of problems writing it
@@ -741,15 +749,17 @@ int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
 	return status;
     }
 
-    /* write the config byte */
-    value = config;
-    status = ezusb_write (dev, "write config byte",
-	    RW_EEPROM, 7, &value, sizeof value);
-    if (status < 0)
-	return status;
+    /* write the config byte for FX, FX2 */
+    if (strcmp ("an21", type) != 0) {
+	value = config;
+	status = ezusb_write (dev, "write config byte",
+		RW_EEPROM, 7, &value, sizeof value);
+	if (status < 0)
+	    return status;
+    }
     
     /* EZ-USB FX has a reserved byte */
-    if (!fx2) {
+    if (strcmp ("fx", type) == 0) {
 	value = 0;
 	status = ezusb_write (dev, "write reserved byte",
 		RW_EEPROM, 8, &value, sizeof value);
@@ -758,9 +768,8 @@ int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
     }
 
     /* make the EEPROM say to boot from this EEPROM */
-    value = fx2 ? 0xC2 : 0xB6;
     status = ezusb_write (dev, "write EEPROM type byte",
-	    RW_EEPROM, 0, &value, sizeof value);
+	    RW_EEPROM, 0, &first_byte, sizeof first_byte);
     if (status < 0)
 	return status;
 
@@ -773,6 +782,12 @@ int ezusb_load_eeprom (int dev, const char *path, int fx2, int config)
 
 /*
  * $Log$
+ * Revision 1.6  2002/04/02 08:34:16  dbrownell
+ * minor stuff:
+ * - don't assume last segment in file is always internal
+ * - tweak diagnostics for easier matchup to 8051 linker maps
+ * - minor comment/format updates
+ *
  * Revision 1.5  2002/02/26 20:06:31  dbrownell
  * - Rewrite for 2nd stage loader support, so this can write
  *   to external RAM and (given the right loader) EEPROM.
