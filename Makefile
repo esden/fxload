@@ -7,7 +7,7 @@ INSTALL = /usr/bin/install -c
 INSTALL_PROGRAM = ${INSTALL}
 
 
-CFLAGS = -O
+CFLAGS = -O -Wall
 
 PROG = fxload
 
