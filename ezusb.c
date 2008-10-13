@@ -29,7 +29,7 @@
 # include  <sys/ioctl.h>
 
 # include  <linux/version.h>
-# include  <linux/usb.h>
+# include  <linux/usb/ch9.h>
 # include  <linux/usbdevice_fs.h>
 
 # include "ezusb.h"
@@ -173,7 +173,7 @@ static int ezusb_read (
     int					status;
 
     if (verbose)
-	logerror("%s, addr 0x%04x len %4d (0x%04x)\n", label, addr, len, len);
+	logerror("%s, addr 0x%04x len %4zd (0x%04zx)\n", label, addr, len, len);
     status = ctrl_msg (device,
 	USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
 	addr, 0,
@@ -201,7 +201,7 @@ static int ezusb_write (
     int					status;
 
     if (verbose)
-	logerror("%s, addr 0x%04x len %4d (0x%04x)\n", label, addr, len, len);
+	logerror("%s, addr 0x%04x len %4zd (0x%04zx)\n", label, addr, len, len);
     status = ctrl_msg (device,
 	USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
 	addr, 0,
@@ -446,7 +446,7 @@ static int ram_poke (
     switch (ctx->mode) {
     case internal_only:		/* CPU should be stopped */
 	if (external) {
-	    logerror("can't write %d bytes external memory at 0x%04x\n",
+	    logerror("can't write %zd bytes external memory at 0x%04x\n",
 		len, addr);
 	    return -EINVAL;
 	}
@@ -454,7 +454,7 @@ static int ram_poke (
     case skip_internal:		/* CPU must be running */
 	if (!external) {
 	    if (verbose >= 2) {
-		logerror("SKIP on-chip RAM, %d bytes at 0x%04x\n",
+		logerror("SKIP on-chip RAM, %zd bytes at 0x%04x\n",
 		    len, addr);
 	    }
 	    return 0;
@@ -463,7 +463,7 @@ static int ram_poke (
     case skip_external:		/* CPU should be stopped */
 	if (external) {
 	    if (verbose >= 2) {
-		logerror("SKIP external RAM, %d bytes at 0x%04x\n",
+		logerror("SKIP external RAM, %zd bytes at 0x%04x\n",
 		    len, addr);
 	    }
 	    return 0;
@@ -610,13 +610,13 @@ static int eeprom_poke (
 
     if (external) {
       logerror(
-	    "EEPROM can't init %d bytes external memory at 0x%04x\n",
+	    "EEPROM can't init %zd bytes external memory at 0x%04x\n",
 	    len, addr);
 	return -EINVAL;
     }
 
     if (len > 1023) {
-	logerror("not fragmenting %d bytes\n", len);
+	logerror("not fragmenting %zd bytes\n", len);
 	return -EDOM;
     }
 
@@ -784,6 +784,10 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 
 /*
  * $Log$
+ * Revision 1.9  2005/01/11 03:58:02  dbrownell
+ * From Dirk Jagdmann <doj@cubic.org>:  optionally output messages to
+ * syslog instead of stderr.
+ *
  * Revision 1.8  2005/01/11 03:08:12  dbrownell
  * Patch from Giovanni Mels, so the string is always null terminated
  * rather than only with "verbose >= 3" ... and the length test is
