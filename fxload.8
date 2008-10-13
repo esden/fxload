@@ -1,6 +1,7 @@
 .\" fxload.8
 .\" Created: Fri Dec 28 2001 by David Brownell
 .\" Copyright (c) 2001-2002 David Brownell <dbrownell@users.sourceforge.net>
+.\" Copyright (c) 2008 Roger Williams <rawqux@users.sourceforge.net>
 .\" 
 .\" Permission is granted to make and distribute verbatim copies of this
 .\" manual provided the copyright notice and this permission notice are
@@ -22,7 +23,7 @@
 .\" Formatted or processed versions of this manual, if unaccompanied by
 .\" the source, must acknowledge the copyright and authors of this work.
 .\" 
-.TH FXLOAD 8 "April 2002" "" "Linux Programmer's Manual"
+.TH FXLOAD 8 "September 2008" "" "Linux Programmer's Manual"
 .SH "NAME"
 fxload \- Firmware download to EZ-USB devices
 .SH "SYNOPSIS"
@@ -46,14 +47,14 @@ fxload \- Firmware download to EZ-USB devices
 .B fxload
 is a program which downloads firmware to USB devices based on
 AnchorChips EZ-USB, Cypress EZ-USB FX,
-or Cypress EZ-USB FX2 microcontrollers.
+or Cypress EZ-USB FX2/FX2LP microcontrollers.
 These have 8-bit 8051 cores with special extensions for USB I/O.
 The FX2 supports high speed USB 2.0 transfers (480 Mbit/sec)
 as well as full speed USB 1.1 transfers (12 Mbit/sec),
 while the earlier parts supports only full speed transfers.
 These controllers have several package options,
 and can be set up with external memory (on-chip memory is
-usually about 8K), EEPROMs, and ROMs when device costs allow.
+usually 8K or 16K), EEPROMs, and ROMs when device costs allow.
 .PP
 This uses "usbfs" (older name:  "usbdevfs") to access
 devices, and issues vendor specific control requests
@@ -136,8 +137,8 @@ Indicates the specified firmware should be downloaded to an
 I2C boot EEPROM rather than to RAM.
 The parameter is the EZ-USB FX or FX2 configuration byte,
 and for AnchorChips devices the value should be zero.
-This requires a second stage loader that knows how to write
-to I2C EEPROMs specified using the
+This requires a second stage loader (e.g. vend_ax.hex) that knows
+how to write to I2C EEPROMs specified using the
 .B \-s
 option, as well as a device that's provided with an EEPROM
 large enough to store the boot firmware.
@@ -164,7 +165,9 @@ type may be one of
 .I fx
 (Cypress' updated version, the EZ-USB FX), or
 .I fx2
-(the Cypress EZ-USB FX2, supporting high speed transfers).
+(the Cypress EZ-USB FX2, supporting high speed transfers), or
+.I fx2lp
+(the Cypress EZ-USB FX2LP, with 16KB internal RAM).
 Except when writing to EEPROM, all that normally matters when
 downloading firmware is whether or not the device uses an FX2.
 .TP

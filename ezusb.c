@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2001 Stephen Williams (steve@icarus.com)
  * Copyright (c) 2001-2002 David Brownell (dbrownell@users.sourceforge.net)
+ * Copyright (c) 2008 Roger Williams (rawqux@users.sourceforge.net)
  *
  *    This source code is free software; you can redistribute it
  *    and/or modify it in source code form under the terms of the GNU
@@ -86,6 +87,25 @@ static int fx2_is_external (unsigned short addr, size_t len)
     /* 1st 8KB for data/code, 0x0000-0x1fff */
     if (addr <= 0x1fff)
 	return ((addr + len) > 0x2000);
+
+    /* and 512 for data, 0xe000-0xe1ff */
+    else if (addr >= 0xe000 && addr <= 0xe1ff)
+	return ((addr + len) > 0xe200);
+
+    /* otherwise, it's certainly external */
+    else
+	return 1;
+}
+
+/*
+ * return true iff [addr,addr+len) includes external RAM
+ * for Cypress EZ-USB FX2LP
+ */
+static int fx2lp_is_external (unsigned short addr, size_t len)
+{
+    /* 1st 16KB for data/code, 0x0000-0x3fff */
+    if (addr <= 0x3fff)
+	return ((addr + len) > 0x4000);
 
     /* and 512 for data, 0xe000-0xe1ff */
     else if (addr >= 0xe000 && addr <= 0xe1ff)
@@ -522,7 +542,10 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 	logerror("open RAM hexfile image %s\n", path);
 
     /* EZ-USB original/FX and FX2 devices differ, apart from the 8051 core */
-    if (fx2) {
+    if (fx2 == 2) {
+	cpucs_addr = 0xe600;
+	is_external = fx2lp_is_external;
+    } else if (fx2) {
 	cpucs_addr = 0xe600;
 	is_external = fx2_is_external;
     } else {
@@ -697,6 +720,18 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 	    (config & 0x01) ? 400 : 100
 	    );
 
+    } else if (strcmp ("fx2lp", type) == 0) {
+	first_byte = 0xC2;
+	cpucs_addr = 0xe600;
+	is_external = fx2lp_is_external;
+	ctx.ee_addr = 8;
+	config &= 0x4f;
+	fprintf (stderr,
+	    "FX2LP:  config = 0x%02x, %sconnected, I2C = %d KHz\n",
+	    config,
+	    (config & 0x40) ? "dis" : "",
+	    (config & 0x01) ? 400 : 100
+	    );
     } else if (strcmp ("fx", type) == 0) {
 	first_byte = 0xB6;
 	cpucs_addr = 0x7f92;
@@ -784,6 +819,9 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 
 /*
  * $Log$
+ * Revision 1.10  2008/10/13 21:22:10  dbrownell
+ * Built against current kernel headers; remove various warnings.
+ *
  * Revision 1.9  2005/01/11 03:58:02  dbrownell
  * From Dirk Jagdmann <doj@cubic.org>:  optionally output messages to
  * syslog instead of stderr.

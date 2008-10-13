@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2001 Stephen Williams (steve@icarus.com)
  * Copyright (c) 2001-2002 David Brownell (dbrownell@users.sourceforge.net)
+ * Copyright (c) 2008 Roger Williams (rawqux@users.sourceforge.net)
  *
  *    This source code is free software; you can redistribute it
  *    and/or modify it in source code form under the terms of the GNU
@@ -27,7 +28,7 @@
  * looking for the device.
  *
  *     -I <path>       -- Download this firmware (intel hex)
- *     -t <type>       -- uController type: an21, fx, fx2
+ *     -t <type>       -- uController type: an21, fx, fx2, fx2lp
  *     -s <path>       -- use this second stage loader
  *     -c <byte>       -- Download to EEPROM, with this config byte
  *
@@ -146,6 +147,7 @@ int main(int argc, char*argv[])
 	    if (strcmp (optarg, "an21")		// original AnchorChips parts
 		    && strcmp (optarg, "fx")	// updated Cypress versions
 		    && strcmp (optarg, "fx2")	// Cypress USB 2.0 versions
+		    && strcmp (optarg, "fx2lp")	// updated FX2
 		    ) {
 		logerror("illegal microcontroller type: %s\n", optarg);
 		goto usage;
@@ -190,7 +192,7 @@ usage:
 	    fputs ("[-s loader] [-c config_byte]\n", stderr);
 	    fputs ("\t\t[-L link] [-m mode]\n", stderr);
 	    fputs ("... [-D devpath] overrides DEVICE= in env\n", stderr);
-	    fputs ("... device types:  one of an21, fx, fx2\n", stderr);
+	    fputs ("... device types:  one of an21, fx, fx2, fx2lp\n", stderr);
 	    fputs ("... at least one of -I, -L, -m is required\n", stderr);
 	    return -1;
       }
@@ -208,8 +210,10 @@ usage:
 	    if (type == 0) {
 	    	type = "fx";	/* an21-compatible for most purposes */
 		fx2 = 0;
-	    } else
- 		fx2 = (strcmp (type, "fx2") == 0);
+	    } else if (strcmp (type, "fx2lp") == 0)
+                fx2 = 2;
+            else
+                fx2 = (strcmp (type, "fx2") == 0);
 	    
 	    if (verbose)
 		logerror("microcontroller type: %s\n", type);
@@ -271,6 +275,10 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.8  2005/01/11 03:58:02  dbrownell
+ * From Dirk Jagdmann <doj@cubic.org>:  optionally output messages to
+ * syslog instead of stderr.
+ *
  * Revision 1.7  2002/04/12 00:28:22  dbrownell
  * support "-t an21" to program EEPROMs for those microcontrollers
  *
