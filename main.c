@@ -81,9 +81,9 @@ void logerror(const char *format, ...)
     va_start(ap, format);
 
     if(dosyslog)
-    	vsyslog(LOG_ERR, format, ap);
+	vsyslog(LOG_ERR, format, ap);
     else
-    	vfprintf(stderr, format, ap);
+	vfprintf(stderr, format, ap);
     va_end(ap);
 }
 
@@ -208,13 +208,13 @@ usage:
 	    }
 
 	    if (type == 0) {
-	    	type = "fx";	/* an21-compatible for most purposes */
+		type = "fx";	/* an21-compatible for most purposes */
 		fx2 = 0;
 	    } else if (strcmp (type, "fx2lp") == 0)
                 fx2 = 2;
             else
                 fx2 = (strcmp (type, "fx2") == 0);
-	    
+
 	    if (verbose)
 		logerror("microcontroller type: %s\n", type);
 
@@ -225,7 +225,7 @@ usage:
 		status = ezusb_load_ram (fd, stage1, fx2, 0);
 		if (status != 0)
 		    return status;
-		
+
 		/* second stage ... write either EEPROM, or RAM.  */
 		if (config >= 0)
 		    status = ezusb_load_eeprom (fd, ihex_path, type, config);
@@ -241,7 +241,7 @@ usage:
 		if (status != 0)
 		    return status;
 	    }
-	    
+
 	    /* some firmware won't renumerate, but typically it will.
 	     * link and chmod only make sense without renumeration...
 	     */
@@ -275,6 +275,9 @@ usage:
 
 /*
  * $Log$
+ * Revision 1.9  2008/10/13 21:23:23  dbrownell
+ * From Roger Williams <roger@qux.com>:  FX2LP support
+ *
  * Revision 1.8  2005/01/11 03:58:02  dbrownell
  * From Dirk Jagdmann <doj@cubic.org>:  optionally output messages to
  * syslog instead of stderr.

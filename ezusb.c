@@ -297,7 +297,7 @@ int parse_ihex (
     FILE	*image,
     void	*context,
     int		(*is_external)(unsigned short addr, size_t len),
-    int 	(*poke) (void *context, unsigned short addr, int external,
+    int		(*poke) (void *context, unsigned short addr, int external,
 		      const unsigned char *data, size_t len)
 )
 {
@@ -319,7 +319,7 @@ int parse_ihex (
      * allows segments of up to 64 KBytes (more than a loader could handle).
      */
     for (;;) {
-	char 		buf [512], *cp;
+	char		buf [512], *cp;
 	char		tmp, type;
 	size_t		len;
 	unsigned	idx, off;
@@ -569,7 +569,7 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 	if (verbose)
 	    logerror("2nd stage:  write external memory\n");
     }
-    
+
     /* scan the image, first (maybe only) time */
     ctx.device = fd;
     ctx.total = ctx.count = 0;
@@ -601,7 +601,7 @@ int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
     if (verbose)
 	logerror("... WROTE: %d bytes, %d segments, avg %d\n",
 	    ctx.total, ctx.count, ctx.total / ctx.count);
-	
+
     /* now reset the CPU so it runs what we just downloaded */
     if (!ezusb_cpucs (fd, cpucs_addr, 1))
 	return -1;
@@ -794,7 +794,7 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 	if (status < 0)
 	    return status;
     }
-    
+
     /* EZ-USB FX has a reserved byte */
     if (strcmp ("fx", type) == 0) {
 	value = 0;
@@ -819,6 +819,9 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 
 /*
  * $Log$
+ * Revision 1.11  2008/10/13 21:23:23  dbrownell
+ * From Roger Williams <roger@qux.com>:  FX2LP support
+ *
  * Revision 1.10  2008/10/13 21:22:10  dbrownell
  * Built against current kernel headers; remove various warnings.
  *
