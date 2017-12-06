@@ -222,6 +222,9 @@ static int ezusb_write (
 
     if (verbose)
 	logerror("%s, addr 0x%04x len %4zd (0x%04zx)\n", label, addr, len, len);
+
+    //return len;
+
     status = ctrl_msg (device,
 	USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
 	addr, 0,
@@ -528,7 +531,7 @@ static int ram_poke (
  */
 int ezusb_load_ram (int fd, const char *path, int fx2, int stage)
 {
-    FILE			*image;
+    FILE			*image = NULL;
     unsigned short		cpucs_addr;
     int				(*is_external)(unsigned short off, size_t len);
     struct ram_poke_context	ctx;
@@ -690,25 +693,29 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config,
     unsigned char		value, first_byte;
     unsigned short ww_vid=0,ww_pid=0;
 
-    if ((status=ezusb_get_eeprom_type (dev, &value)) != 1 || value != 1) {
-	logerror("don't see a large enough EEPROM, status=%d, val=%d%s\n",
-	       status,value,value==0 ? " (ignored)" : "");
-	if(value!=0) return -1;
-    }
+    if (path) {
+	if ((status=ezusb_get_eeprom_type (dev, &value)) != 1 || value != 1) {
+            logerror("don't see a large enough EEPROM, status=%d, val=%d%s\n",
+                     status,value,value==0 ? " (ignored)" : "");
+            if(value!=0) return -1;
+	}
 
-    image = fopen (path, "r");
-    if (image == 0) {
-	logerror("%s: unable to open for input.\n", path);
-	return -2;
-    } else if (verbose)
-	logerror("open EEPROM hexfile image %s\n", path);
+        image = fopen (path, "r");
+        if (image == 0) {
+            logerror("%s: unable to open for input.\n", path);
+            return -2;
+        } else if (verbose)
+            logerror("open EEPROM hexfile image %s\n", path);
+    } else {
+        image = NULL;
+    }
 
     if (verbose)
 	logerror("2nd stage:  write boot EEPROM\n");
 
     /* EZ-USB family devices differ, apart from the 8051 core */
     if (strcmp ("fx2", type) == 0) {
-	first_byte = 0xC2;
+	first_byte = (path) ? 0xC2 : 0xC0;
 	cpucs_addr = 0xe600;
 	is_external = fx2_is_external;
 	ctx.ee_addr = 8;
@@ -726,7 +733,7 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config,
 	    );
 
     } else if (strcmp ("fx2lp", type) == 0) {
-	first_byte = 0xC2;
+	first_byte = (path) ? 0xC2 : 0xC0;
 	cpucs_addr = 0xe600;
 	is_external = fx2lp_is_external;
 	ctx.ee_addr = 8;
@@ -734,19 +741,25 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config,
 	ww_vid=0x04B4;
 	ww_pid=0x8613;
 	fprintf (stderr,
-	    "FX2LP:  config = 0x%02x, %sconnected, I2C = %d KHz\n",
+	    "FX2LP:  type = 0x%02x, config = 0x%02x, %sconnected, I2C = %d KHz\n",
+	    first_byte,
 	    config,
 	    (config & 0x40) ? "dis" : "",
 	    (config & 0x01) ? 400 : 100
 	    );
     } else if (strcmp ("fx", type) == 0) {
+	if (!path) {
+            logerror("don't know what to do with when onli vid pid flashing");
+            return -1;
+	}
 	first_byte = 0xB6;
 	cpucs_addr = 0x7f92;
 	is_external = fx_is_external;
 	ctx.ee_addr = 9;
 	config &= 0x07;
 	logerror(
-	    "FX:  config = 0x%02x, %d MHz%s, I2C = %d KHz\n",
+	    "FX:  type = 0x%20x, config = 0x%02x, %d MHz%s, I2C = %d KHz\n",
+	    first_byte,
 	    config,
 	    ((config & 0x04) ? 48 : 24),
 	    (config & 0x02) ? " inverted" : "",
@@ -754,6 +767,10 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config,
 	    );
 
     } else if (strcmp ("an21", type) == 0) {
+	if (!path) {
+            logerror("don't know what to do with when only vid pid flashing");
+            return -1;
+	}
 	first_byte = 0xB2;
 	cpucs_addr = 0x7f92;
 	is_external = fx_is_external;
@@ -794,22 +811,24 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config,
 	    return status;
     }
 
-    /* scan the image, write to EEPROM */
-    ctx.device = dev;
-    ctx.last = 0;
-    status = parse_ihex (image, &ctx, is_external, eeprom_poke);
-    if (status < 0) {
-	logerror("unable to write EEPROM %s\n", path);
-	return status;
-    }
+    if (path) {
+        /* scan the image, write to EEPROM */
+        ctx.device = dev;
+        ctx.last = 0;
+        status = parse_ihex (image, &ctx, is_external, eeprom_poke);
+        if (status < 0) {
+            logerror("unable to write EEPROM %s\n", path);
+            return status;
+        }
 
-    /* append a reset command */
-    value = 0;
-    ctx.last = 1;
-    status = eeprom_poke (&ctx, cpucs_addr, 0, &value, sizeof value);
-    if (status < 0) {
-	logerror("unable to append reset to EEPROM %s\n", path);
-	return status;
+        /* append a reset command */
+        value = 0;
+        ctx.last = 1;
+        status = eeprom_poke (&ctx, cpucs_addr, 0, &value, sizeof value);
+        if (status < 0) {
+            logerror("unable to append reset to EEPROM %s\n", path);
+            return status;
+        }
     }
 
     /* write the config byte for FX, FX2 */

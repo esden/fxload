@@ -181,8 +181,13 @@ int main(int argc, char*argv[])
 				"to write EEPROM!\n");
 		goto usage;
 	    }
-	    if (!stage1 || !ihex_path) {
-		logerror("need 2nd stage loader and firmware %s",
+	    if (!stage1){
+		logerror("need 2nd stage loader %s",
+				"to write EEPROM!\n");
+		goto usage;
+	    }
+	    if (!ihex_path && (!ww_config_vid || !ww_config_pid)) {
+		logerror("firmware or VID:PID %s",
 				"to write EEPROM!\n");
 		goto usage;
 	    }
@@ -208,7 +213,7 @@ usage:
 	    return -1;
       }
 
-      if (ihex_path || do_erase) {
+      if (ihex_path || do_erase || (ww_config_vid && ww_config_pid)) {
 	    int fd = open(device_path, O_RDWR);
 	    int status;
 	    int	fx2;
@@ -278,8 +283,8 @@ usage:
 	    }
       }
 
-      if (!ihex_path && !link_path && !mode && !do_erase) {
-	    logerror("missing request! (firmware, link, or mode)\n");
+      if (!ihex_path && !link_path && !mode && !do_erase && (!ww_config_vid || !ww_config_pid)) {
+	    logerror("missing request! (firmware, link, mode, erase or device id)\n");
 	    return -1;
       }
 
