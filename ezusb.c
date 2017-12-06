@@ -18,7 +18,7 @@
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
-#ident "$Id$"
+#ident "$Id: ezusb.c,v 1.12 2008/10/13 21:25:29 dbrownell Exp $"
 
 # include  <stdio.h>
 # include  <errno.h>
@@ -679,7 +679,8 @@ static int eeprom_poke (
  * Caller must have pre-loaded a second stage loader that knows how
  * to handle the EEPROM write requests.
  */
-int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
+int ezusb_load_eeprom (int dev, const char *path, const char *type, int config,
+	int ww_config_vid,int ww_config_pid)
 {
     FILE			*image;
     unsigned short		cpucs_addr;
@@ -687,10 +688,12 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
     struct eeprom_poke_context	ctx;
     int				status;
     unsigned char		value, first_byte;
+    unsigned short ww_vid=0,ww_pid=0;
 
-    if (ezusb_get_eeprom_type (dev, &value) != 1 || value != 1) {
-	logerror("don't see a large enough EEPROM\n");
-	return -1;
+    if ((status=ezusb_get_eeprom_type (dev, &value)) != 1 || value != 1) {
+	logerror("don't see a large enough EEPROM, status=%d, val=%d%s\n",
+	       status,value,value==0 ? " (ignored)" : "");
+	if(value!=0) return -1;
     }
 
     image = fopen (path, "r");
@@ -710,6 +713,8 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 	is_external = fx2_is_external;
 	ctx.ee_addr = 8;
 	config &= 0x4f;
+	ww_vid=0x04B4;
+	ww_pid=0x6473;
 	logerror(
 	    "FX2:  config = 0x%02x, %sconnected, I2C = %d KHz\n",
 	    config,
@@ -726,6 +731,8 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 	is_external = fx2lp_is_external;
 	ctx.ee_addr = 8;
 	config &= 0x4f;
+	ww_vid=0x04B4;
+	ww_pid=0x8613;
 	fprintf (stderr,
 	    "FX2LP:  config = 0x%02x, %sconnected, I2C = %d KHz\n",
 	    config,
@@ -767,6 +774,25 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
 	    RW_EEPROM, 0, &value, sizeof value);
     if (status < 0)
 	return status;
+
+    if(ww_config_vid>=0)  ww_vid=ww_config_vid;
+    if(ww_config_pid>=0)  ww_pid=ww_config_pid;
+
+    // Load default IDs of an unconfigured FX2 (WW/wolfgang).
+    if(ww_vid && ww_pid)
+    {
+	unsigned char buf[6];
+	buf[0] = ww_vid & 0xffU;
+	buf[1] = (ww_vid>>8) & 0xffU;
+	buf[2] = ww_pid & 0xffU;
+	buf[3] = (ww_pid>>8) & 0xffU;
+	buf[4] = 0x05;  // 0xAnnn nnn = chip revision, where first silicon = 001)
+	buf[5] = 0xa0;
+	fprintf (stderr, "Writing vid=0x%04x, pid=0x%04x\n",ww_vid,ww_pid);
+	status = ezusb_write (dev, "load VID, PID", RW_EEPROM, 1, buf, 6);
+	if (status < 0)
+	    return status;
+    }
 
     /* scan the image, write to EEPROM */
     ctx.device = dev;
@@ -817,8 +843,33 @@ int ezusb_load_eeprom (int dev, const char *path, const char *type, int config)
     return 0;
 }
 
+
+int ezusb_erase_eeprom (int dev)
+{
+    int	status;
+    int adr;
+    unsigned char buf[32];
+
+    memset(buf,0xff,32);
+
+    // Assume EEPROM size of 8k (24LC64).
+    for(adr=0; adr<8192; adr+=32)
+    {
+	status = ezusb_write (dev, "overwrite EEPROM with 0xff",
+	    RW_EEPROM, adr, buf, 32);
+	if (status < 0)
+	    return status;
+    }
+
+    return 0;
+}
+
+
 /*
- * $Log$
+ * $Log: ezusb.c,v $
+ * Revision 1.12  2008/10/13 21:25:29  dbrownell
+ * Whitespace fixes.
+ *
  * Revision 1.11  2008/10/13 21:23:23  dbrownell
  * From Roger Williams <roger@qux.com>:  FX2LP support
  *

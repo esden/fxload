@@ -32,4 +32,4 @@ form of patches against the current CVS ("cvs diff -u"), or the last
 release ("diff -u old new") is most useful, since otherwise it's awkward
 to integrate such changes into the standard distribution.
 
-$Id$
+$Id: README.txt,v 1.5 2008/10/13 21:23:23 dbrownell Exp $

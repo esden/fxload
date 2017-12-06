@@ -19,7 +19,7 @@
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
-#ident "$Id$"
+#ident "$Id: ezusb.h,v 1.4 2008/10/13 21:25:29 dbrownell Exp $"
 
 
 /*
@@ -49,16 +49,21 @@ extern int ezusb_load_eeprom (
 	int dev,		/* usbfs device handle */
 	const char *path,	/* path to hexfile */
 	const char *type,	/* fx, fx2, an21 */
-	int config		/* config byte for fx/fx2; else zero */
+	int config,		/* config byte for fx/fx2; else zero */
+	int ww_config_vid,int ww_config_pid  /* VID:PID to write into EEPROM or -1*/
 	);
 
 
 /* boolean flag, says whether to write extra messages to stderr */
 extern int verbose;
 
+extern int ezusb_erase_eeprom (int dev);
 
 /*
- * $Log$
+ * $Log: ezusb.h,v $
+ * Revision 1.4  2008/10/13 21:25:29  dbrownell
+ * Whitespace fixes.
+ *
  * Revision 1.3  2002/04/12 00:28:21  dbrownell
  * support "-t an21" to program EEPROMs for those microcontrollers
  *

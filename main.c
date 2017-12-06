@@ -18,7 +18,7 @@
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
-#ident "$Id$"
+#ident "$Id: main.c,v 1.10 2008/10/13 21:25:29 dbrownell Exp $"
 
 /*
  * This program supports loading firmware into a target USB device
@@ -97,8 +97,10 @@ int main(int argc, char*argv[])
       mode_t		mode = 0;
       int		opt;
       int		config = -1;
+      int		do_erase = 0;
+      int		ww_config_vid=-1,ww_config_pid=-1;
 
-      while ((opt = getopt (argc, argv, "2vV?D:I:L:c:lm:s:t:")) != EOF)
+      while ((opt = getopt (argc, argv, "2vVE?D:I:L:c:lm:s:t:d:")) != EOF)
       switch (opt) {
 
 	  case '2':		// original version of "-t fx2"
@@ -159,6 +161,14 @@ int main(int argc, char*argv[])
 	    verbose++;
 	    break;
 
+	  case 'E':
+	    do_erase=1;
+	    break;
+
+	  case 'd':
+	    sscanf(optarg,"%x%*c%x",&ww_config_vid,&ww_config_pid);
+	    break;
+
 	  case '?':
 	  default:
 	    goto usage;
@@ -187,17 +197,18 @@ int main(int argc, char*argv[])
 usage:
 	    fputs ("usage: ", stderr);
 	    fputs (argv [0], stderr);
-	    fputs (" [-vV] [-l] [-t type] [-D devpath]\n", stderr);
+	    fputs (" [-vVE] [-l] [-t type] [-D devpath]\n", stderr);
 	    fputs ("\t\t[-I firmware_hexfile] ", stderr);
-	    fputs ("[-s loader] [-c config_byte]\n", stderr);
+	    fputs ("[-s loader] [-c config_byte] [-d VID:PID]\n", stderr);
 	    fputs ("\t\t[-L link] [-m mode]\n", stderr);
 	    fputs ("... [-D devpath] overrides DEVICE= in env\n", stderr);
 	    fputs ("... device types:  one of an21, fx, fx2, fx2lp\n", stderr);
-	    fputs ("... at least one of -I, -L, -m is required\n", stderr);
+	    fputs ("... at least one of -I, -L, -m, -E is required\n", stderr);
+	    fputs ("options -c and -d affect only EEPROM content\n", stderr);
 	    return -1;
       }
 
-      if (ihex_path) {
+      if (ihex_path || do_erase) {
 	    int fd = open(device_path, O_RDWR);
 	    int status;
 	    int	fx2;
@@ -227,8 +238,11 @@ usage:
 		    return status;
 
 		/* second stage ... write either EEPROM, or RAM.  */
-		if (config >= 0)
-		    status = ezusb_load_eeprom (fd, ihex_path, type, config);
+		if(do_erase)
+		    status = ezusb_erase_eeprom(fd);
+		else if (config >= 0)
+		    status = ezusb_load_eeprom (fd, ihex_path, type, config,
+			ww_config_vid,ww_config_pid);
 		else
 		    status = ezusb_load_ram (fd, ihex_path, fx2, 1);
 		if (status != 0)
@@ -264,7 +278,7 @@ usage:
 	    }
       }
 
-      if (!ihex_path && !link_path && !mode) {
+      if (!ihex_path && !link_path && !mode && !do_erase) {
 	    logerror("missing request! (firmware, link, or mode)\n");
 	    return -1;
       }
@@ -274,7 +288,10 @@ usage:
 
 
 /*
- * $Log$
+ * $Log: main.c,v $
+ * Revision 1.10  2008/10/13 21:25:29  dbrownell
+ * Whitespace fixes.
+ *
  * Revision 1.9  2008/10/13 21:23:23  dbrownell
  * From Roger Williams <roger@qux.com>:  FX2LP support
  *
