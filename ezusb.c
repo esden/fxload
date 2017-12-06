@@ -222,8 +222,6 @@ static int ezusb_write (
     if (verbose)
 	logerror("%s, addr 0x%04x len %4zd (0x%04zx)\n", label, addr, len, len);
 
-    //return len;
-
     status = ctrl_msg (device,
 	USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, opcode,
 	addr, 0,
