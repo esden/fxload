@@ -1,6 +1,4 @@
 #
-# $Id: a3load.hex,v 1.1 2002/04/12 00:23:28 dbrownell Exp $
-#
 # This file contains "a3load" object code, as found in the Cypress
 # EZ-USB developer kit.  It implements a second stage firmware loader
 # supporting the original EZ-USB parts and the newer FX and FX2 ones,

@@ -18,7 +18,6 @@
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
-#ident "$Id: ezusb.c,v 1.12 2008/10/13 21:25:29 dbrownell Exp $"
 
 # include  <stdio.h>
 # include  <errno.h>
@@ -882,58 +881,4 @@ int ezusb_erase_eeprom (int dev)
 
     return 0;
 }
-
-
-/*
- * $Log: ezusb.c,v $
- * Revision 1.12  2008/10/13 21:25:29  dbrownell
- * Whitespace fixes.
- *
- * Revision 1.11  2008/10/13 21:23:23  dbrownell
- * From Roger Williams <roger@qux.com>:  FX2LP support
- *
- * Revision 1.10  2008/10/13 21:22:10  dbrownell
- * Built against current kernel headers; remove various warnings.
- *
- * Revision 1.9  2005/01/11 03:58:02  dbrownell
- * From Dirk Jagdmann <doj@cubic.org>:  optionally output messages to
- * syslog instead of stderr.
- *
- * Revision 1.8  2005/01/11 03:08:12  dbrownell
- * Patch from Giovanni Mels, so the string is always null terminated
- * rather than only with "verbose >= 3" ... and the length test is
- * changed accordingly.
- *
- * Revision 1.7  2002/04/12 00:25:58  dbrownell
- * - support older AnchorChips style EEPROMs too
- * - minor bugfix for config byte mask in FX
- *
- * Revision 1.6  2002/04/02 08:34:16  dbrownell
- * minor stuff:
- * - don't assume last segment in file is always internal
- * - tweak diagnostics for easier matchup to 8051 linker maps
- * - minor comment/format updates
- *
- * Revision 1.5  2002/02/26 20:06:31  dbrownell
- * - Rewrite for 2nd stage loader support, so this can write
- *   to external RAM and (given the right loader) EEPROM.
- * - Handle usbfs API changes in Linux kernel 2.5.
- * - A "more verbose" option.
- *
- * Revision 1.4  2002/01/17 14:47:44  dbrownell
- * init first line, remove warnings
- *
- * Revision 1.3  2001/12/27 17:59:33  dbrownell
- * merge adjacent hex records, and optionally show writes
- *
- * Revision 1.2  2001/12/14 11:24:04  dbrownell
- * Add sanity check: reject requests to load off-chip memory,
- * The EZ-USB devices just fail silently in these cases.
- *
- * Revision 1.1  2001/06/12 00:00:50  stevewilliams
- *  Added the fxload program.
- *  Rework root makefile and hotplug.spec to install in prefix
- *  location without need of spec file for install.
- *
- */
 

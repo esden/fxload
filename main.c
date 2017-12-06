@@ -18,7 +18,6 @@
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
-#ident "$Id: main.c,v 1.10 2008/10/13 21:25:29 dbrownell Exp $"
 
 /*
  * This program supports loading firmware into a target USB device
@@ -289,45 +288,6 @@ usage:
       }
 
       return 0;
+
 }
 
-
-/*
- * $Log: main.c,v $
- * Revision 1.10  2008/10/13 21:25:29  dbrownell
- * Whitespace fixes.
- *
- * Revision 1.9  2008/10/13 21:23:23  dbrownell
- * From Roger Williams <roger@qux.com>:  FX2LP support
- *
- * Revision 1.8  2005/01/11 03:58:02  dbrownell
- * From Dirk Jagdmann <doj@cubic.org>:  optionally output messages to
- * syslog instead of stderr.
- *
- * Revision 1.7  2002/04/12 00:28:22  dbrownell
- * support "-t an21" to program EEPROMs for those microcontrollers
- *
- * Revision 1.6  2002/04/02 05:26:15  dbrownell
- * version display now noiseless (-V);
- * '-?' (usage info) convention now explicit
- *
- * Revision 1.5  2002/02/26 20:10:28  dbrownell
- * - "-s loader" option for 2nd stage loader
- * - "-c byte" option to write EEPROM with 2nd stage
- * - "-V" option to dump version code
- *
- * Revision 1.4  2002/01/17 14:19:28  dbrownell
- * fix warnings
- *
- * Revision 1.3  2001/12/27 17:54:04  dbrownell
- * forgot an important character :)
- *
- * Revision 1.2  2001/12/27 17:43:29  dbrownell
- * fail on firmware download errors; add "-v" flag
- *
- * Revision 1.1  2001/06/12 00:00:50  stevewilliams
- *  Added the fxload program.
- *  Rework root makefile and hotplug.spec to install in prefix
- *  location without need of spec file for install.
- *
- */

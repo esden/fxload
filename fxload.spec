@@ -84,4 +84,3 @@ make prefix=%buildroot install
 * Mon Jan 15 2001 Greg Kroah-Hartman <greg@kroah.com>
 - First cut at a spec file for the hotplug scripts.
 - added patch to usb.rc to allow chkconfig to install and remove it.
-

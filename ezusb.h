@@ -19,8 +19,6 @@
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
-#ident "$Id: ezusb.h,v 1.4 2008/10/13 21:25:29 dbrownell Exp $"
-
 
 /*
  * This function loads the firmware from the given file into RAM.
@@ -59,21 +57,4 @@ extern int verbose;
 
 extern int ezusb_erase_eeprom (int dev);
 
-/*
- * $Log: ezusb.h,v $
- * Revision 1.4  2008/10/13 21:25:29  dbrownell
- * Whitespace fixes.
- *
- * Revision 1.3  2002/04/12 00:28:21  dbrownell
- * support "-t an21" to program EEPROMs for those microcontrollers
- *
- * Revision 1.2  2002/02/26 19:55:05  dbrownell
- * 2nd stage loader support
- *
- * Revision 1.1  2001/06/12 00:00:50  stevewilliams
- *  Added the fxload program.
- *  Rework root makefile and hotplug.spec to install in prefix
- *  location without need of spec file for install.
- *
- */
 #endif

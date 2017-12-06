@@ -1,4 +1,3 @@
-# $Id: Makefile,v 1.6 2002/04/12 00:31:00 dbrownell Exp $
 #
 # Builds "fxload" binaries, distribution tarball, and RPMs.
 #

@@ -1,0 +1,4 @@
+fxload
+*.o
+*~
+*.swp
